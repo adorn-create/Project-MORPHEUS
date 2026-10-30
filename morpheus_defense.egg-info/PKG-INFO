@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: morpheus-defense
+Version: 0.1.0
+Requires-Python: >=3.12
+Requires-Dist: fastapi<1,>=0.115
+Requires-Dist: uvicorn[standard]<1,>=0.32
+Requires-Dist: psutil<7,>=6
+Requires-Dist: jinja2<4,>=3.1
+Requires-Dist: httpx<1,>=0.27
+Requires-Dist: python-multipart<1,>=0.0.18
+Provides-Extra: build
+Requires-Dist: pyinstaller<7,>=6.19; extra == "build"
+Requires-Dist: pywin32>=310; platform_system == "Windows" and extra == "build"

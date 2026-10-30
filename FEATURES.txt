@@ -1,0 +1,127 @@
+MORPHEUS DEFENSE - CURRENT FEATURES
+==================================
+
+Desktop dashboard
+-----------------
+- Windows desktop app with a local security dashboard.
+- F11 toggles fullscreen; Escape exits fullscreen. The shortcut has no
+  on-screen button.
+- Live dashboard status, recent detections, and ATT&CK-mapped timeline.
+- Run a process activity scan and refresh the displayed data.
+- System tray controls, minimize-to-tray behavior, and optional startup at
+  Windows sign-in.
+
+Device and process monitoring
+-----------------------------
+- Collects process metadata and reviews CPU and established network activity.
+- Reports established connections to globally routable IP addresses.
+- Compares running executable names against a review-only catalog of 70 common
+  dual-use security tools.
+- Shows Sysmon installation status.
+- Builds a local process parent-child snapshot and highlights selected document
+  applications that start command or script hosts for manual review. This does
+  not store command lines or inspect process memory.
+- Checks live command lines against a small set of built-in tool misuse patterns.
+  Raw arguments are analyzed in memory and discarded; alerts store indicator
+  names and a command-line hash, not the command text.
+- Optional DNS entropy review checks newly observed entries in the Windows DNS
+  client cache (off by default); it is not packet capture and can miss uncached
+  queries.
+- Optional PowerShell event monitoring reviews new event ID 4104 records when
+  Windows Script Block Logging is already enabled (off by default). Script text
+  is analyzed in memory, then discarded; only its hash and indicator names are
+  recorded.
+- The new expansion sensors create review-only alerts. They do not terminate
+  processes, isolate a device, or change firewall rules automatically.
+- Optional canary monitoring creates two harmless synthetic files only inside
+  Morpheus's own data folder and alerts if they change or disappear.
+- An explainable 15-minute review-priority score combines distinct recent
+  alert types; it is not a probability or malware verdict.
+- The separate `Advancement.py` script supports opt-in, single-interface
+  passive DNS/ARP review using a DNS/ARP-only packet filter. Packet storage is
+  disabled; DNS names are hashed before alert logging. This script is not part
+  of the desktop app.
+
+File and download analysis
+--------------------------
+- Analyze a selected file or browse a folder using local static-analysis
+  heuristics, including SHA-256 and entropy. Results are shown as plain-language
+  notes; a heuristic score is not a probability or malware verdict.
+- Run Morpheus's local, deterministic source-code review rules on selected
+  source files or folders. Findings include severity, line number, and
+  suggested remediation; source text is not uploaded or stored.
+- Source-code review is heuristic and limited to 2 MB per file, 2,000
+  candidate files, and 100 MB total. It is not a full secure-code audit.
+- Folder scans skip protected system locations and are limited to 10,000 files,
+  30 GB total, and 100 MB per file.
+- Optional monitoring of new executable/script downloads in the top level of
+  a user-selected folder, including folders on another drive.
+- Optional automatic quarantine of high-confidence process detections and
+  suspicious downloads; both controls are off by default.
+- Quarantined files can be reviewed, restored, or deleted; quarantine copies
+  are checked against their SHA-256 hash.
+- Quarantine notifications can be shown by the desktop app.
+
+Firewall and settings
+---------------------
+- Optional controls to add outbound Windows Firewall blocks for public IPv4
+  addresses and remove Morpheus-owned rules.
+- A restricted Windows firewall worker supports the machine-wide installer.
+- Optional local owner-password confirmation for firewall and security-setting
+  changes.
+- Monitoring, automatic quarantine, and download monitoring are opt-in
+  settings; firewall automatic blocking is disabled by default.
+
+Records and integrity
+---------------------
+- Stores events and ATT&CK timeline entries locally in SQLite.
+- Maintains an evidence journal and provides an explicit full-journal
+  verification endpoint.
+- Dashboard status uses the last known journal verification state to avoid
+  rescanning the entire journal on every refresh.
+
+Important limitations
+---------------------
+- This is a local defensive prototype, not an antivirus replacement or
+  "military-grade" protection. Keep Microsoft Defender and Windows Firewall
+  enabled.
+- Detections are heuristic and can have false positives or miss threats.
+- The tool catalog is not exhaustive and matches process names; it cannot find
+  every hacking tool or reliably identify a person from an IP address.
+- Network monitoring covers established connections, not every inbound
+  connection attempt. Firewall rules block outbound traffic from this device;
+  they do not stop or freeze a remote device.
+- DNS entropy and PowerShell event checks are heuristic review signals. DNS
+  checks read the Windows DNS cache, not all DNS packets. PowerShell event
+  monitoring requires Windows Script Block Logging to be configured separately.
+- Standalone packet review requires the optional Scapy dependency and, on
+  Windows, a compatible packet-capture driver and interface permissions. It
+  inspects only DNS and ARP and does not change traffic or network settings.
+- Port-trap listeners, process/memory termination, anti-kill guardians, kernel
+  hooks, automatic network isolation, DNS/ARP changes, domain-age lookups, and
+  packet interception are not implemented.
+- Download monitoring checks new files at the top level of Downloads when
+  enabled. It does not inspect existing files, archives, every folder, or
+  intercept all downloads.
+- Quarantine and owner-password controls are local features, not protection
+  against a local administrator or malware running as the same user.
+- The app does not use email registration or email OTP for uninstalling.
+
+Possible future engineering work (not currently included)
+----------------------------------------------------------
+- Network capture and offline PCAP review: Scapy, PyShark/TShark, or dpkt.
+- Central log search: Elasticsearch or OpenSearch clients; Kafka/Faust for
+  streaming and PySpark for large-scale batch processing.
+- Validated anomaly models: scikit-learn first; PyTorch, TensorFlow, XGBoost,
+  or LightGBM only if suitable, representative training data is available.
+- Alert relationships and standardized threat data: NetworkX and STIX 2.
+- Model robustness evaluation: Adversarial Robustness Toolbox (ART).
+- Deeper file/process telemetry: pefile or Capstone for executable metadata,
+  watchdog for file-change notifications, and Windows Sysmon event collection.
+
+These are candidates for careful, opt-in development, not current Morpheus
+capabilities. They are not installed as app dependencies. Packet capture
+requires appropriate Windows drivers and permission; log/ML systems require
+data handling and model validation. This project does not generate network
+traffic, perform lateral movement, train an AI threat model, inspect process
+memory, or promise enterprise EDR/XDR coverage.

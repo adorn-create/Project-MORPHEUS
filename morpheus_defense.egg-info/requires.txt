@@ -1,0 +1,12 @@
+fastapi<1,>=0.115
+uvicorn[standard]<1,>=0.32
+psutil<7,>=6
+jinja2<4,>=3.1
+httpx<1,>=0.27
+python-multipart<1,>=0.0.18
+
+[build]
+pyinstaller<7,>=6.19
+
+[build:platform_system == "Windows"]
+pywin32>=310

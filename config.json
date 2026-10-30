@@ -1,0 +1,20 @@
+{
+  "poll_interval_seconds": 5,
+  "automatic_high_confidence": false,
+  "automatic_quarantine": false,
+  "download_monitoring": false,
+  "automatic_quarantine_downloads": false,
+  "dns_entropy_monitoring": false,
+  "powershell_log_monitoring": false,
+  "process_tree_monitoring": true,
+  "canary_monitoring": false,
+  "download_confidence_threshold": 0.6,
+  "high_confidence_threshold": 0.95,
+  "protected_roots": [],
+  "excluded_processes": [
+    "System",
+    "Registry",
+    "csrss.exe",
+    "lsass.exe"
+  ]
+}

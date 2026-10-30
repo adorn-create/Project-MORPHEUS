@@ -1,0 +1,56 @@
+{
+  "name": "morpheus-defense-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "desktop/main.js",
+  "scripts": {
+    "app": "electron .",
+    "build:backend": "node scripts/build-backend.js",
+    "build:firewall-worker": "node scripts/build-firewall-worker.js",
+    "build:win": "npm run build:backend && npm run build:firewall-worker && electron-builder --win nsis",
+    "test:ui": "node tests/test-dashboard-ui.cjs"
+  },
+  "devDependencies": {
+    "electron": "^45.1.0",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.projectmorpheus.defense",
+    "productName": "Morpheus Defense",
+    "asar": true,
+    "electronFuses": {
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    },
+    "files": [
+      "desktop/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "backend-build/dist/morpheus-backend",
+        "to": "backend"
+      },
+      {
+        "from": "config.json",
+        "to": "config.default.json"
+      },
+      {
+        "from": "worker-build/dist/morpheus-firewall-worker",
+        "to": "firewall-worker"
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "perMachine": true,
+      "oneClick": false,
+      "include": "build/installer.nsh"
+    }
+  }
+}

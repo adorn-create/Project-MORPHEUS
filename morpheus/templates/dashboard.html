@@ -1,0 +1,1304 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07111f">
+  <link rel="icon" href="/favicon.ico" type="image/svg+xml">
+  <title>Morpheus Defense</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: "Segoe UI", Inter, system-ui, sans-serif;
+      background: #07111f;
+      color: #dce9f7;
+      font-synthesis: none;
+      --panel: #101923;
+      --panel-raised: #172330;
+      --border: #304050;
+      --muted: #9aa8b7;
+      --cyan: #f0ad57;
+      --green: #80d5a5;
+      --red: #ff6474;
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-width: 320px;
+      min-height: 100vh;
+      margin: 0;
+      background:
+        radial-gradient(ellipse at 82% -15%, rgba(192, 92, 48, .16), transparent 38rem),
+        linear-gradient(180deg, #0b1118 0%, #080d13 100%);
+      background-attachment: fixed;
+    }
+    button, input { font: inherit; }
+    button {
+      min-height: 42px;
+      padding: 0 16px;
+      border: 1px solid #6d4d31;
+      border-radius: 7px;
+      background: #211a15;
+      color: #e8f7ff;
+      cursor: pointer;
+      transition: background .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+    }
+    button:hover:not(:disabled) { background: #39291d; border-color: var(--cyan); transform: translateY(-1px); box-shadow: 0 5px 18px rgba(240, 173, 87, .12); }
+    button:disabled { cursor: wait; opacity: .7; }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 18px clamp(18px, 4vw, 52px);
+      border-bottom: 1px solid var(--border);
+      background: rgba(12, 18, 25, .94);
+      box-shadow: 0 10px 32px rgba(0, 0, 0, .24);
+    }
+    .brand { display: flex; align-items: center; gap: 14px; }
+    .brand-mark {
+      display: grid;
+      width: 42px;
+      height: 42px;
+      place-items: center;
+      border: 1px solid #805632;
+      border-radius: 10px;
+      background: linear-gradient(145deg, #3b291a, #171b20 72%);
+      color: var(--cyan);
+      font-size: 19px;
+      font-weight: 800;
+      box-shadow: inset 0 0 18px rgba(240, 173, 87, .09), 0 0 22px rgba(240, 173, 87, .08);
+    }
+    h1 { margin: 0; font-size: clamp(21px, 3vw, 30px); letter-spacing: .09em; }
+    .eyebrow { margin: 0 0 4px; color: var(--cyan); font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+    .top-actions { display: flex; align-items: center; gap: 10px; }
+    .primary { border-color: #b5793e; background: linear-gradient(135deg, #8b4828, #59321f); color: #fff4e8; }
+    main { width: min(1440px, 100%); margin: 0 auto; padding: 30px clamp(16px, 3vw, 36px) 48px; }
+    .overview {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 20px;
+      margin-bottom: 18px;
+    }
+    .overview h2 { margin: 0 0 6px; font-size: 25px; }
+    .overview p, .subtle { margin: 0; color: var(--muted); font-size: 14px; }
+    .connection { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 12px rgba(124, 242, 189, .55); }
+    .connection.error .dot { background: var(--red); box-shadow: 0 0 12px rgba(255, 130, 147, .45); }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+    .card, .panel {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: linear-gradient(150deg, rgba(24, 34, 45, .96), rgba(13, 19, 26, .98));
+      box-shadow: 0 12px 30px rgba(0, 0, 0, .22);
+    }
+    .card { position: relative; min-height: 116px; padding: 19px 20px; overflow: hidden; transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease; }
+    .card:hover { transform: translateY(-2px); border-color: #765735; box-shadow: 0 16px 36px rgba(0, 0, 0, .3), 0 0 24px rgba(240, 173, 87, .05); }
+    .card::before { position: absolute; inset: 0 auto 0 0; width: 3px; background: linear-gradient(180deg, var(--cyan), transparent); content: ""; opacity: .8; }
+    .card-detail { margin-top: 8px; color: var(--muted); font-size: 12px; }
+    .setting-toggle { display: flex; align-items: flex-start; gap: 12px; margin-top: 14px; }
+    .setting-toggle input { width: 18px; min-height: 18px; flex: 0 0 18px; accent-color: var(--cyan); }
+    .setting-toggle label { font-size: 14px; font-weight: 650; }
+    .card-label { color: #a9bfd3; font-size: 13px; font-weight: 650; }
+    .card-value { margin-top: 12px; color: #eff8ff; font-size: 27px; font-weight: 650; }
+    .card-value.small { font-size: 20px; }
+    .section { margin-top: 24px; }
+    .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
+    .section-heading h2 { margin: 0; font-size: 17px; }
+    .panel { padding: 19px; }
+    .scan-panel { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+    .scan-copy h2 { margin: 0 0 7px; font-size: 17px; }
+    .scan-copy p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .scan-status { min-height: 21px; margin-top: 12px; color: var(--cyan); font-size: 13px; }
+    .scan-status.complete { color: var(--green); }
+    .scan-status.warning, .scan-status.error { color: var(--red); }
+    .scan-status.working::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 8px; border: 2px solid #39718c; border-top-color: var(--cyan); border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 780px; }
+    th, td { padding: 13px 12px; border-bottom: 1px solid rgba(27, 56, 82, .8); text-align: left; vertical-align: top; font-size: 13px; }
+    th { color: var(--cyan); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    td { color: #c3d3e2; overflow-wrap: anywhere; }
+    .severity-critical { color: var(--red); }
+    .severity-high { color: #ffc078; }
+    .severity-medium { color: #f0df83; }
+    .empty { padding: 24px 12px; color: var(--muted); text-align: center; }
+    .tools-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr); gap: 14px; }
+    .field-row { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 14px; }
+    .field-row input { flex: 1 1 220px; }
+    .field-row button { white-space: nowrap; }
+    input { width: 100%; min-width: 0; min-height: 42px; padding: 0 12px; border: 1px solid var(--border); border-radius: 9px; background: #081625; color: #e8f7ff; }
+    .result { min-height: 22px; margin: 14px 0 0; color: var(--muted); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .result.error { color: #ff9aa5; }
+    .password-form { display: grid; gap: 10px; margin-top: 12px; }
+    .password-form[hidden] { display: none; }
+    .password-form-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+    .password-form-message { min-height: 20px; margin: 0; color: var(--muted); font-size: 13px; }
+    .password-form-message.error { color: #ff9aa5; }
+    .firewall-worker-button[hidden] { display: none; }
+    .folder-results { max-height: 320px; margin-top: 12px; overflow: auto; }
+    .folder-results table { min-width: 520px; }
+    .folder-results th, .folder-results td { padding: 9px; }
+    .folder-results:empty { display: none; }
+    .timeline-list { display: grid; gap: 10px; }
+    .timeline-item { padding: 13px 14px; border: 1px solid var(--border); border-radius: 8px; background: rgba(8, 13, 19, .62); }
+    .timeline-title { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 14px; font-weight: 650; }
+    .technique { color: var(--cyan); font-family: Consolas, monospace; }
+    .timeline-meta { margin-top: 6px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+    .sysmon-copy { color: var(--muted); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+    .sysmon-copy strong { color: #dce9f7; }
+    .tree-list { display: grid; gap: 8px; max-height: 320px; margin-top: 12px; overflow: auto; }
+    .tree-item { padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; color: #dce9f7; font-size: 13px; overflow-wrap: anywhere; }
+    .tree-item.review { border-color: #765735; }
+    .tree-item small { display: block; margin-top: 4px; color: var(--muted); }
+    .worker-state { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; }
+    .worker-state .dot { flex: 0 0 8px; }
+    .worker-state.error .dot { background: var(--red); box-shadow: 0 0 12px rgba(255, 100, 116, .4); }
+    .firewall-rules { display: grid; gap: 8px; margin-top: 14px; }
+    .firewall-rule { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 7px; color: #dce9f7; font: 13px Consolas, monospace; }
+    .firewall-rule button { min-height: 34px; padding: 0 10px; color: #ffd5d9; border-color: #70404a; background: #2a171b; }
+    .password-state { margin: 10px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .field-row input[type="text"] { min-width: 180px; }
+    .danger { border-color: #70404a; background: #2a171b; color: #ffd5d9; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    body.is-fullscreen .topbar { position: sticky; top: 0; z-index: 5; border-color: rgba(240, 173, 87, .25); background: rgba(9, 14, 20, .88); backdrop-filter: blur(18px); }
+    body.is-fullscreen main { width: min(1720px, 100%); padding-top: 36px; }
+    body.is-fullscreen .section { margin-top: 30px; }
+    body.is-fullscreen .panel { padding: 23px; }
+    body.is-fullscreen .card { min-height: 132px; padding: 23px; }
+    @media (max-width: 760px) {
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .top-actions { width: 100%; }
+      .top-actions button { flex: 1; }
+      .grid { grid-template-columns: 1fr; }
+      .card { min-height: 98px; }
+      .tools-grid { grid-template-columns: 1fr; }
+      .overview { align-items: flex-start; flex-direction: column; }
+      .scan-panel { align-items: flex-start; flex-direction: column; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">M</div>
+      <div><p class="eyebrow">Local endpoint monitoring</p><h1>MORPHEUS DEFENSE</h1></div>
+    </div>
+    <nav class="top-actions" aria-label="Dashboard actions">
+      <button class="primary" id="runScanButton" type="button">Run scan</button>
+      <button id="refreshButton" type="button">Refresh data</button>
+    </nav>
+  </header>
+  <main>
+    <section class="overview" aria-labelledby="overviewTitle">
+      <div><p class="eyebrow">Security overview</p><h2 id="overviewTitle">Endpoint activity</h2><p>Review observed behavior from this device.</p></div>
+      <div class="connection" id="connectionStatus" role="status"><span class="dot"></span><span>Connecting to local service</span></div>
+    </section>
+
+    <section class="grid" aria-label="Security summary">
+      <article class="card"><div class="card-label">Recorded events</div><div class="card-value" id="eventCount">{{ events|length }}</div></article>
+      <article class="card"><div class="card-label">Auto-quarantine</div><div class="card-value small" id="quarantineState">{{ 'ON' if config.get('automatic_quarantine', false) else 'OFF' }}</div></article>
+      <article class="card"><div class="card-label">Background monitoring</div><div class="card-value small" id="monitoringState">Checking</div><div class="card-detail" id="lastScanTime">Waiting for first scan</div><div class="card-detail" id="downloadMonitorState">Downloads: OFF</div></article>
+      <article class="card"><div class="card-label">Known tool signatures</div><div class="card-value" id="toolCatalogCount">Checking</div><div class="card-detail">Running-process name matches; not exhaustive</div></article>
+      <article class="card"><div class="card-label">Recent review priority</div><div class="card-value small" id="riskLevel">Checking</div><div class="card-detail" id="riskDetails">Based on recent alert types, not a probability</div></article>
+    </section>
+
+    <section class="section panel scan-panel" aria-labelledby="scanTitle">
+      <div class="scan-copy">
+        <h2 id="scanTitle">Process behavior scan</h2>
+        <p>Review process behavior and known dual-use security tools currently running on this device. Tool-name matches can be legitimate, are never auto-blocked, and the catalog is not exhaustive. Morpheus checks process names and paths, plus a few command-line patterns for built-in tools; it does not save raw command lines or inspect file contents or process memory.</p>
+        <div class="scan-status" id="scanStatus" role="status" aria-live="polite">Ready to scan this device.</div>
+      </div>
+      <button class="primary" id="scanPanelButton" type="button">Start scan</button>
+    </section>
+
+    <section class="section" aria-labelledby="eventsTitle">
+      <div class="section-heading"><h2 id="eventsTitle">Recent detections</h2><span class="subtle">Latest observed events</span></div>
+      <div class="panel table-wrap">
+        <table>
+          <thead><tr><th>When</th><th>Status</th><th>Area</th><th>Item</th><th>What it means</th><th>Next step</th></tr></thead>
+          <tbody id="eventsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section tools-grid">
+      <div class="panel" aria-labelledby="fileScanTitle">
+        <div class="section-heading"><h2 id="fileScanTitle">Static file analysis</h2></div>
+        <p class="subtle">Morpheus checks for a few file patterns. These notes are not a malware verdict; compressed photos and archives can look unusual.</p>
+        <div class="setting-toggle">
+          <input id="automaticQuarantine" type="checkbox" {% if config.get('automatic_quarantine', false) %}checked{% endif %}>
+          <label for="automaticQuarantine">Automatically quarantine high-confidence process detections</label>
+        </div>
+        <div class="setting-toggle">
+          <input id="downloadMonitoring" type="checkbox" {% if config.get('download_monitoring', false) %}checked{% endif %}>
+          <label for="downloadMonitoring">Monitor new downloads in the Windows Downloads folder</label>
+        </div>
+        <div class="field-row">
+          <input id="downloadDirectoryPath" aria-label="Download monitoring folder" readonly value="{{ config.get('download_directory') or '' }}" placeholder="Default: your user's Downloads folder">
+          <button id="browseDownloadFolderButton" type="button">Choose monitored folder</button>
+        </div>
+        <p class="password-state">Choose a folder on any drive (for example D:\Downloads). Existing files are treated as already present; new supported files are checked after they finish downloading.</p>
+        <div class="setting-toggle">
+          <input id="quarantineDownloads" type="checkbox" {% if config.get('automatic_quarantine_downloads', false) %}checked{% endif %}>
+          <label for="quarantineDownloads">Automatically quarantine downloads flagged by local heuristics</label>
+        </div>
+        <p class="subtle">Quarantined files can be restored. This uses local heuristics, not web reputation checks, and does not intercept every download.</p>
+        <div class="field-row">
+          <input id="scanPath" aria-label="File or folder path to scan" placeholder="Choose a file or folder, or enter its path">
+          <button id="browseFileButton" type="button">Browse file</button>
+          <button class="primary" id="fileScanButton" type="button">Analyze file</button>
+          <button id="browseFolderButton" type="button">Browse folder</button>
+          <button id="reviewCodeButton" type="button">Review source code</button>
+          <input id="folderInput" type="file" webkitdirectory multiple hidden aria-label="Choose a folder to scan">
+        </div>
+        <p class="subtle">Code review uses Morpheus's own local deterministic rules. It checks selected source files and folders for common risky patterns, reports line numbers and fixes, and may miss issues or flag safe code. It does not upload or save source code.</p>
+        <div class="result" id="scanResult" role="status" aria-live="polite">Enter a file path or choose a folder to analyze.</div>
+        <div class="folder-results" id="folderResults"></div>
+      </div>
+      <div class="panel" aria-labelledby="sysmonTitle">
+        <div class="section-heading"><h2 id="sysmonTitle">Sysmon status</h2></div>
+        <div class="sysmon-copy" id="sysmonStatus">Checking local installation...</div>
+      </div>
+    </section>
+
+    <section class="section tools-grid" aria-label="Expansion monitoring">
+      <div class="panel" aria-labelledby="expansionTitle">
+        <div class="section-heading"><h2 id="expansionTitle">Expansion pipeline</h2></div>
+        <p class="subtle">These sensors create local review alerts only. DNS and PowerShell telemetry are opt-in. They do not kill processes, isolate devices, or change firewall rules; separate existing quarantine settings remain configurable.</p>
+        <div class="setting-toggle">
+          <input id="dnsEntropyMonitoring" type="checkbox" {% if config.get('dns_entropy_monitoring', false) %}checked{% endif %}>
+          <label for="dnsEntropyMonitoring">Review new cached DNS names for unusually random labels</label>
+        </div>
+        <p class="password-state" id="dnsMonitorStatus" role="status">DNS monitoring status: checking...</p>
+        <div class="setting-toggle">
+          <input id="powershellLogMonitoring" type="checkbox" {% if config.get('powershell_log_monitoring', false) %}checked{% endif %}>
+          <label for="powershellLogMonitoring">Review new PowerShell Script Block Logging events (4104)</label>
+        </div>
+        <p class="password-state" id="powershellMonitorStatus" role="status">PowerShell monitoring status: checking...</p>
+        <div class="setting-toggle">
+          <input id="processTreeMonitoring" type="checkbox" {% if config.get('process_tree_monitoring', true) %}checked{% endif %}>
+          <label for="processTreeMonitoring">Monitor process parent-child relationships</label>
+        </div>
+        <div class="setting-toggle">
+          <input id="canaryMonitoring" type="checkbox" {% if config.get('canary_monitoring', false) %}checked{% endif %}>
+          <label for="canaryMonitoring">Monitor harmless Morpheus canary files in its data folder</label>
+        </div>
+        <p class="password-state" id="canaryMonitorStatus" role="status">Canary status: checking...</p>
+        <p class="password-state">Findings are heuristics, not proof of compromise. Any firewall response remains a separate, manually confirmed action.</p>
+      </div>
+      <div class="panel" aria-labelledby="processTreeTitle">
+        <div class="section-heading"><h2 id="processTreeTitle">Process relationship snapshot</h2></div>
+        <p class="subtle">The graph uses process names and IDs; command lines are not included in the graph or stored. A separate small ruleset checks a few command patterns in memory. Document apps launching script hosts are highlighted for review.</p>
+        <div class="tree-list" id="processTree" role="status" aria-live="polite">Waiting for the first process snapshot...</div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="timelineTitle">
+      <div class="section-heading"><h2 id="timelineTitle">ATT&amp;CK timeline</h2><span class="subtle">Mapped from recorded detections</span></div>
+      <div class="timeline-list" id="timeline"></div>
+    </section>
+
+    <section class="section tools-grid" aria-label="Firewall and owner controls">
+      <div class="panel" aria-labelledby="firewallTitle">
+        <div class="section-heading"><h2 id="firewallTitle">Outbound firewall rules</h2></div>
+        <p class="subtle">Block a public IPv4 address or remove a Morpheus-owned rule. Changes may disrupt network access.</p>
+        <div class="worker-state" id="firewallWorkerState" role="status"><span class="dot"></span><span>Checking privileged worker...</span></div>
+        <button class="firewall-worker-button" id="startFirewallWorkerButton" type="button" hidden>Start firewall service (administrator approval)</button>
+        <p class="result" id="firewallActionStatus" role="status" aria-live="polite"></p>
+        <div class="field-row">
+          <input id="firewallIp" type="text" inputmode="decimal" aria-label="Public IPv4 address to block" placeholder="203.0.113.1">
+          <button class="primary" id="addFirewallRuleButton" type="button">Block address</button>
+        </div>
+        <div class="firewall-rules" id="firewallRules"></div>
+      </div>
+      <div class="panel" aria-labelledby="ownerSecurityTitle">
+        <div class="section-heading"><h2 id="ownerSecurityTitle">Owner settings protection</h2></div>
+        <p class="subtle">Set a local password to confirm security-setting and firewall changes. It is stored as a salted password hash on this device.</p>
+        <div class="field-row">
+          <input id="ownerPasswordInput" type="password" autocomplete="current-password" aria-label="Owner settings password" placeholder="Enter password to confirm changes">
+        </div>
+        <button id="settingsPasswordButton" type="button">Set owner password</button>
+        <p class="password-state" id="settingsPasswordState" role="status">No owner password configured.</p>
+        <form class="password-form" id="settingsPasswordForm" hidden>
+          <label for="newOwnerPassword">New password (at least 10 characters)</label>
+          <input id="newOwnerPassword" type="password" autocomplete="new-password" minlength="10" maxlength="1024" required>
+          <label for="confirmOwnerPassword">Confirm new password</label>
+          <input id="confirmOwnerPassword" type="password" autocomplete="new-password" minlength="10" maxlength="1024" required>
+          <p class="password-form-message" id="passwordFormMessage" role="status" aria-live="polite"></p>
+          <div class="password-form-actions">
+            <button class="primary" id="saveOwnerPasswordButton" type="submit">Save password</button>
+            <button id="cancelOwnerPasswordButton" type="button">Cancel</button>
+          </div>
+        </form>
+        <p class="password-state">This password does not control Windows sign-in or uninstall. The device owner can always remove Morpheus normally.</p>
+      </div>
+    </section>
+  </main>
+<script>
+const runScanButton = document.getElementById('runScanButton');
+const scanPanelButton = document.getElementById('scanPanelButton');
+const refreshButton = document.getElementById('refreshButton');
+const scanStatus = document.getElementById('scanStatus');
+const connectionStatus = document.getElementById('connectionStatus');
+const fileScanButton = document.getElementById('fileScanButton');
+const browseFileButton = document.getElementById('browseFileButton');
+const browseFolderButton = document.getElementById('browseFolderButton');
+const folderInput = document.getElementById('folderInput');
+const scanResult = document.getElementById('scanResult');
+const folderResults = document.getElementById('folderResults');
+const downloadMonitoring = document.getElementById('downloadMonitoring');
+const downloadDirectoryPath = document.getElementById('downloadDirectoryPath');
+const browseDownloadFolderButton = document.getElementById('browseDownloadFolderButton');
+const quarantineDownloads = document.getElementById('quarantineDownloads');
+const dnsEntropyMonitoring = document.getElementById('dnsEntropyMonitoring');
+const powershellLogMonitoring = document.getElementById('powershellLogMonitoring');
+const processTreeMonitoring = document.getElementById('processTreeMonitoring');
+const canaryMonitoring = document.getElementById('canaryMonitoring');
+const maxFolderFiles = 10000;
+const maxFolderBytes = 30 * 1024 * 1024 * 1024;
+const maxFileBytes = 100 * 1024 * 1024;
+let settingsPasswordConfigured = false;
+let firewallRulesLoaded = false;
+let firewallRulesLoading = false;
+
+if (window.morpheus && typeof window.morpheus.onFullScreenChanged === 'function') {
+  window.morpheus.onFullScreenChanged(isFullScreen => {
+    document.body.classList.toggle('is-fullscreen', isFullScreen);
+  });
+}
+
+async function requestJson(url, options) {
+  let response;
+  try {
+    response = await fetch(url, options);
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error('Cannot reach the local service. Start or restart Morpheus, then try again.');
+    }
+    throw error;
+  }
+  const raw = await response.text();
+  let data;
+  try {
+    data = raw ? JSON.parse(raw) : null;
+  } catch {
+    data = raw;
+  }
+  if (!response.ok) {
+    const message = data && typeof data === 'object' ? data.detail || data.error : data;
+    throw new Error(message || `Request failed (${response.status})`);
+  }
+  if (data === null) throw new Error('The local service returned an empty response.');
+  return data;
+}
+
+function setConnectionStatus(message, failed = false) {
+  connectionStatus.classList.toggle('error', failed);
+  connectionStatus.lastElementChild.textContent = message;
+}
+
+function setScanStatus(message, state = '') {
+  scanStatus.textContent = message;
+  scanStatus.className = `scan-status ${state}`.trim();
+}
+
+function addCell(row, value, className = '') {
+  const cell = document.createElement('td');
+  cell.textContent = value == null ? '-' : String(value);
+  if (className) cell.className = className;
+  row.appendChild(cell);
+}
+
+function readableEvidence(value) {
+  const explanations = {
+    executable_or_script_type: 'This file can run code. That is normal for apps and scripts, but it does not prove the file is unsafe.',
+    high_entropy: 'The file looks compressed or encrypted. This is common in photos and archives and is not suspicious by itself.',
+    implausibly_small_native_file: 'This program file is unusually small. It may be incomplete or unusual, but this alone does not prove harm.',
+    suspicious_native_marker: 'The file contains text patterns sometimes associated with harmful software. Legitimate tools may contain them too.',
+  };
+  let items = value;
+  if (typeof value === 'string') {
+    try {
+      items = JSON.parse(value);
+    } catch {
+      return value || 'No extra details were recorded.';
+    }
+  }
+  if (!Array.isArray(items)) return String(value || 'No extra details were recorded.');
+  const notes = items.map(item => explanations[item] || String(item));
+  return notes.length ? notes.join(' ') : 'No known local warning patterns were found. This is not a guarantee that the file is safe.';
+}
+
+function friendlyEvidence(value, kind) {
+  let evidence = value;
+  if (typeof value === 'string') {
+    try {
+      evidence = JSON.parse(value);
+    } catch {
+      return value || 'No extra details were recorded.';
+    }
+  }
+  if (kind === 'dns_entropy') {
+    return 'A newly cached DNS name contains a long, unusually random label. Some legitimate tracking and delivery services do this too; review the domain before taking action.';
+  }
+  if (kind === 'powershell_script_block') {
+    const indicators = Array.isArray(evidence.indicators) ? evidence.indicators.join(', ') : 'unusual script patterns';
+    return `PowerShell event 4104 matched review patterns (${indicators}). Script contents are not stored; this is not proof of malicious activity.`;
+  }
+  if (kind === 'process_tree_review') {
+    return evidence.reason || 'A document application started a command or script host. This can be legitimate; verify the parent and child processes.';
+  }
+  if (kind === 'lolbin_command_pattern') {
+    const indicators = Array.isArray(evidence.indicators) ? evidence.indicators.join(', ') : 'a built-in tool command pattern';
+    return `A running process matched a review-only command pattern (${indicators}). Command text is not stored; the process may still be legitimate.`;
+  }
+  if (kind === 'canary_file_change') {
+    return `A harmless Morpheus decoy marker was ${evidence.state || 'changed'}. This can indicate unexpected access to the Morpheus data folder; review local activity.`;
+  }
+  if (Array.isArray(evidence)) return readableEvidence(evidence);
+  if (evidence && typeof evidence === 'object') {
+    if (evidence.tool) return `${evidence.tool} is running. Security tools can be used legitimately; review its source and purpose.`;
+    return Object.entries(evidence).map(([key, item]) => `${key.replaceAll('_', ' ')}: ${String(item)}`).join('; ');
+  }
+  return String(evidence || 'No extra details were recorded.');
+}
+
+function friendlySeverity(value) {
+  return ({
+    critical: 'Urgent',
+    high: 'Important',
+    medium: 'Review',
+    low: 'Information',
+  })[String(value || '').toLowerCase()] || 'Not rated';
+}
+
+function friendlyResponse(value) {
+  if (!value) return 'No action recorded.';
+  if (value === 'review_required_manual_approval') return 'Alert recorded; no automatic action. Use the firewall panel only after reviewing and confirming.';
+  if (String(value).startsWith('quarantined:')) return 'Moved to quarantine; review it before restoring.';
+  if (value === 'flagged_pending_review') return 'Flagged for you to review; no automatic removal.';
+  if (String(value).startsWith('quarantine_failed:')) return 'Flagged, but Morpheus could not move it to quarantine.';
+  if (String(value).startsWith('download_scan_skipped:')) return 'Not scanned; the file was skipped.';
+  if (String(value).startsWith('download_scan_failed:')) return 'Could not scan this file.';
+  return String(value);
+}
+
+function renderEvents(events) {
+  if (!Array.isArray(events)) throw new Error('The events response was not a list.');
+  const body = document.getElementById('eventsBody');
+  body.replaceChildren();
+  if (!events.length) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 6;
+    cell.className = 'empty';
+    cell.textContent = 'No detections recorded. Run a scan to check current process activity.';
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+  for (const event of events) {
+    const row = document.createElement('tr');
+    const severity = String(event.severity || '').toLowerCase();
+    const time = event.timestamp ? new Date(event.timestamp).toLocaleString() : '-';
+    addCell(row, time);
+    addCell(row, friendlySeverity(severity), severity ? `severity-${severity}` : '');
+    addCell(row, event.source);
+    addCell(row, event.target);
+    addCell(row, friendlyEvidence(event.evidence, event.kind));
+    addCell(row, friendlyResponse(event.response));
+    body.appendChild(row);
+  }
+}
+
+function renderTimeline(items) {
+  if (!Array.isArray(items)) throw new Error('The timeline response was not a list.');
+  const timeline = document.getElementById('timeline');
+  timeline.replaceChildren();
+  if (!items.length) {
+    const empty = document.createElement('div');
+    empty.className = 'panel empty';
+    empty.textContent = 'No ATT&CK techniques mapped yet. Detections will appear here when available.';
+    timeline.appendChild(empty);
+    return;
+  }
+  for (const item of items) {
+    const card = document.createElement('article');
+    card.className = 'timeline-item';
+    const title = document.createElement('div');
+    title.className = 'timeline-title';
+    const technique = document.createElement('span');
+    technique.className = 'technique';
+    technique.textContent = item.technique_id || 'Unknown technique';
+    const name = document.createElement('span');
+    name.textContent = item.technique_name || 'Unmapped activity';
+    title.append(technique, name);
+    const meta = document.createElement('div');
+    meta.className = 'timeline-meta';
+    meta.textContent = `${item.timestamp || ''} | ${item.target || 'Unknown target'} | ${item.attack_stage || 'Activity'}`;
+    card.append(title, meta);
+    timeline.appendChild(card);
+  }
+}
+
+function renderSysmon(data) {
+  const container = document.getElementById('sysmonStatus');
+  container.replaceChildren();
+  const heading = document.createElement('p');
+  const state = document.createElement('strong');
+  state.textContent = data.installed ? 'Installed' : 'Not detected';
+  heading.append('Status: ', state);
+  container.appendChild(heading);
+  if (data.executable) {
+    const path = document.createElement('p');
+    path.textContent = `Executable: ${data.executable}`;
+    container.appendChild(path);
+  }
+  if (!data.installed && data.install_help) {
+    const guidance = document.createElement('p');
+    guidance.textContent = data.install_help;
+    container.appendChild(guidance);
+  }
+}
+
+function renderProcessTree(data) {
+  if (!data || !Array.isArray(data.nodes) || !Array.isArray(data.edges)) {
+    throw new Error('The process-tree response is invalid.');
+  }
+  const container = document.getElementById('processTree');
+  container.replaceChildren();
+  const summary = document.createElement('p');
+  summary.className = 'password-state';
+  summary.textContent = `${data.total_processes} processes, ${data.edges.length} parent-child relationships${data.truncated ? ' (display data capped)' : ''}.`;
+  container.appendChild(summary);
+  if (!data.edges.length) {
+    const empty = document.createElement('div');
+    empty.className = 'tree-item';
+    empty.textContent = data.nodes.length
+      ? 'No parent-child relationships were available in this snapshot.'
+      : 'No process snapshot available yet. Run a scan or wait for background monitoring.';
+    container.appendChild(empty);
+    return;
+  }
+  const reviewEdges = data.edges.filter(edge => edge.review);
+  const displayEdges = (reviewEdges.length ? reviewEdges : data.edges).slice(0, 25);
+  for (const edge of displayEdges) {
+    const item = document.createElement('div');
+    item.className = `tree-item${edge.review ? ' review' : ''}`;
+    item.textContent = `${edge.parent_name} (PID ${edge.parent_pid}) -> ${edge.child_name} (PID ${edge.child_pid})`;
+    if (edge.reason) {
+      const note = document.createElement('small');
+      note.textContent = `${edge.reason} This is a review alert, not a verdict.`;
+      item.appendChild(note);
+    }
+    container.appendChild(item);
+  }
+  if (data.edges.length > displayEdges.length) {
+    const note = document.createElement('p');
+    note.className = 'password-state';
+    note.textContent = `Showing ${displayEdges.length} of ${data.edges.length} relationships.`;
+    container.appendChild(note);
+  }
+}
+
+function renderRiskSummary(data) {
+  if (!data || typeof data.score !== 'number' || !Array.isArray(data.signals)) {
+    throw new Error('The review-priority response is invalid.');
+  }
+  document.getElementById('riskLevel').textContent =
+    `${String(data.level || 'normal').toUpperCase()} (${data.score}/100)`;
+  document.getElementById('riskDetails').textContent = data.signals.length
+    ? `${data.signals.map(signal => signal.label).join('; ')}. ${data.explanation}`
+    : `No recognized alerts in the last ${data.window_minutes} minutes. ${data.explanation}`;
+}
+
+async function refreshDashboard(includeFirewall = false) {
+  const [events, timeline, sysmon, status, passwordStatus, workerStatus, processTree, risk] = await Promise.all([
+    requestJson('/api/events'),
+    requestJson('/api/timeline'),
+    requestJson('/api/sysmon'),
+    requestJson('/api/status'),
+    requestJson('/api/settings-password/status'),
+    requestJson('/api/firewall/worker'),
+    requestJson('/api/process-tree'),
+    requestJson('/api/risk')
+  ]);
+  if (typeof status.event_count !== 'number') throw new Error('The status response is missing the event count.');
+  if (!status.monitoring || typeof status.monitoring.running !== 'boolean') {
+    throw new Error('The status response is missing background monitoring information.');
+  }
+  if (!status.tool_watch || typeof status.tool_watch.catalog_entries !== 'number') {
+    throw new Error('The status response is missing tool-watch coverage information.');
+  }
+  renderEvents(events);
+  renderTimeline(timeline);
+  renderSysmon(sysmon);
+  renderProcessTree(processTree);
+  renderRiskSummary(risk);
+  settingsPasswordConfigured = Boolean(passwordStatus.configured);
+  document.getElementById('settingsPasswordState').textContent = settingsPasswordConfigured
+    ? 'Owner password is configured; it is required for security-setting changes.'
+    : 'No owner password configured; security-setting changes are not password-confirmed.';
+  document.getElementById('settingsPasswordButton').textContent = settingsPasswordConfigured
+    ? 'Change owner password'
+    : 'Set owner password';
+  document.getElementById('ownerPasswordInput').disabled = !settingsPasswordConfigured;
+  document.getElementById('ownerPasswordInput').placeholder = settingsPasswordConfigured
+    ? 'Required to confirm protected changes'
+    : 'Not needed until you set an owner password';
+  setFirewallWorkerState(workerStatus);
+  if (includeFirewall || !firewallRulesLoaded) loadFirewallRules();
+  document.getElementById('eventCount').textContent = String(status.event_count);
+  document.getElementById('toolCatalogCount').textContent = String(status.tool_watch.catalog_entries);
+  document.getElementById('monitoringState').textContent = status.monitoring.running ? 'RUNNING' : 'STOPPED';
+  document.getElementById('monitoringState').classList.toggle('severity-critical', !status.monitoring.running);
+  document.getElementById('lastScanTime').textContent = status.monitoring.last_scan_at
+    ? `Last scan: ${new Date(status.monitoring.last_scan_at).toLocaleTimeString()}`
+    : status.monitoring.last_error ? 'Last background scan failed' : 'Waiting for first scan';
+  document.getElementById('downloadMonitorState').textContent = status.monitoring.downloads_enabled ? 'Downloads: ON' : 'Downloads: OFF';
+  downloadDirectoryPath.value = status.monitoring.download_directory || '';
+  document.getElementById('quarantineState').textContent = status.config.automatic_quarantine ? 'ON' : 'OFF';
+  document.getElementById('automaticQuarantine').checked = Boolean(status.config.automatic_quarantine);
+  downloadMonitoring.checked = Boolean(status.config.download_monitoring);
+  quarantineDownloads.checked = Boolean(status.config.automatic_quarantine_downloads);
+  dnsEntropyMonitoring.checked = Boolean(status.config.dns_entropy_monitoring);
+  powershellLogMonitoring.checked = Boolean(status.config.powershell_log_monitoring);
+  processTreeMonitoring.checked = status.config.process_tree_monitoring !== false;
+  canaryMonitoring.checked = Boolean(status.config.canary_monitoring);
+  const expansion = status.expansion || {};
+  document.getElementById('dnsMonitorStatus').textContent = expansion.dns
+    ? expansion.dns.message
+    : 'DNS cache status unavailable.';
+  document.getElementById('powershellMonitorStatus').textContent = expansion.powershell
+    ? expansion.powershell.message
+    : 'PowerShell event-log status unavailable.';
+  document.getElementById('canaryMonitorStatus').textContent = expansion.canary
+    ? expansion.canary.message
+    : 'Canary monitoring status unavailable.';
+  setConnectionStatus('Local service connected');
+  if (scanStatus.textContent.includes('Cannot reach the local service.')) {
+    setScanStatus('Local service reconnected. Retry the scan.');
+  }
+  if (scanResult.textContent.includes('Cannot reach the local service.')) {
+    scanResult.textContent = 'Local service reconnected. Retry the file or folder scan.';
+  }
+}
+
+async function runScan() {
+  runScanButton.disabled = true;
+  scanPanelButton.disabled = true;
+  setScanStatus('Scanning local process activity...', 'working');
+  try {
+    const result = await requestJson('/api/scan', { method: 'POST' });
+    if (!Array.isArray(result.detected)) throw new Error('The scan response did not include detection results.');
+    const count = result.detected.length;
+    setScanStatus(
+      count ? `Scan complete. ${count} detection${count === 1 ? '' : 's'} recorded.` : 'Scan complete. No detections in this process snapshot.',
+      count ? 'warning' : 'complete'
+    );
+    try {
+      await refreshDashboard();
+    } catch (error) {
+      setConnectionStatus(`Scan completed; refresh failed: ${error.message}`, true);
+    }
+  } catch (error) {
+    setScanStatus(`Scan failed: ${error.message}`, 'error');
+    setConnectionStatus('Local service error', true);
+  } finally {
+    runScanButton.disabled = false;
+    scanPanelButton.disabled = false;
+  }
+}
+
+async function refresh(includeFirewall = false) {
+  refreshButton.disabled = true;
+  try {
+    await refreshDashboard(includeFirewall);
+  } catch (error) {
+    setConnectionStatus(`Refresh failed: ${error.message}`, true);
+  } finally {
+    refreshButton.disabled = false;
+  }
+}
+
+function clearFolderResults() {
+  folderResults.replaceChildren();
+}
+
+function showFolderResults(results, failures) {
+  const table = document.createElement('table');
+  const head = document.createElement('thead');
+  const header = document.createElement('tr');
+  for (const label of ['File', 'Local notes', 'What this means']) {
+    const cell = document.createElement('th');
+    cell.textContent = label;
+    header.appendChild(cell);
+  }
+  head.appendChild(header);
+  const body = document.createElement('tbody');
+  for (const result of results) {
+    const row = document.createElement('tr');
+    const name = document.createElement('td');
+    name.textContent = result.path;
+    const reasons = Array.isArray(result.reasons) ? result.reasons : [];
+    const noted = document.createElement('td');
+    noted.textContent = reasons.length ? `${reasons.length} pattern${reasons.length === 1 ? '' : 's'} noticed` : 'No known warning patterns';
+    const meaning = document.createElement('td');
+    meaning.textContent = readableEvidence(reasons);
+    row.append(name, noted, meaning);
+    body.appendChild(row);
+  }
+  for (const failure of failures) {
+    const row = document.createElement('tr');
+    const name = document.createElement('td');
+    name.textContent = failure.name;
+    const error = document.createElement('td');
+    error.colSpan = 2;
+    error.textContent = failure.message;
+    row.append(name, error);
+    body.appendChild(row);
+  }
+  table.append(head, body);
+  folderResults.replaceChildren(table);
+}
+
+async function scanFolderPath(path) {
+  fileScanButton.disabled = true;
+  browseFileButton.disabled = true;
+  browseFolderButton.disabled = true;
+  document.getElementById('reviewCodeButton').disabled = true;
+  document.getElementById('scanPath').value = path;
+  clearFolderResults();
+  scanResult.textContent = 'Scanning selected folder locally. Windows system locations are excluded...';
+  try {
+    const data = await requestJson('/api/scan-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    });
+    showFolderResults(data.results, data.failures);
+    const flagged = data.results.filter(result => Array.isArray(result.reasons) && result.reasons.length).length;
+    scanResult.textContent =
+      `Morpheus checked ${data.results.length} files. It noticed patterns in ${flagged}; this does not mean they are infected. ` +
+      `${data.skipped_system_paths} protected system paths skipped${data.failures.length ? `, ${data.failures.length} failed` : ''}. ` +
+      `These heuristic notes are not a malware verdict.${data.message ? ` ${data.message}` : ''}`;
+  } catch (error) {
+    scanResult.textContent = `Folder scan failed: ${error.message}`;
+  } finally {
+    fileScanButton.disabled = false;
+    browseFileButton.disabled = false;
+    browseFolderButton.disabled = false;
+    document.getElementById('reviewCodeButton').disabled = false;
+  }
+}
+
+async function analyzeFilePath() {
+  const path = document.getElementById('scanPath').value.trim();
+  if (!path) {
+    scanResult.textContent = 'Enter a file path or choose Browse folder.';
+    return;
+  }
+  fileScanButton.disabled = true;
+  browseFileButton.disabled = true;
+  browseFolderButton.disabled = true;
+  document.getElementById('reviewCodeButton').disabled = true;
+  clearFolderResults();
+  scanResult.textContent = 'Analyzing file...';
+  try {
+    const result = await requestJson('/api/scan-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    });
+    showFolderResults([result], []);
+    const noted = Array.isArray(result.reasons) ? result.reasons.length : 0;
+    scanResult.textContent = noted
+      ? `Morpheus noticed ${noted} pattern${noted === 1 ? '' : 's'}. This is not a malware verdict; read the plain-language note below.`
+      : 'Morpheus found no known warning patterns. This is not a guarantee that the file is safe.';
+  } catch (error) {
+    scanResult.textContent = `Analysis failed: ${error.message}`;
+  } finally {
+    fileScanButton.disabled = false;
+    browseFileButton.disabled = false;
+    browseFolderButton.disabled = false;
+    document.getElementById('reviewCodeButton').disabled = false;
+  }
+}
+
+function showCodeReviewResults(data) {
+  const table = document.createElement('table');
+  const head = document.createElement('thead');
+  const header = document.createElement('tr');
+  for (const label of ['Severity', 'File', 'Line', 'Finding', 'Suggested fix']) {
+    const cell = document.createElement('th');
+    cell.textContent = label;
+    header.appendChild(cell);
+  }
+  head.appendChild(header);
+  const body = document.createElement('tbody');
+  for (const finding of data.findings) {
+    const row = document.createElement('tr');
+    for (const value of [
+      String(finding.severity || 'review').toUpperCase(),
+      finding.path,
+      String(finding.line),
+      finding.title,
+      finding.remediation,
+    ]) {
+      const cell = document.createElement('td');
+      cell.textContent = value;
+      row.appendChild(cell);
+    }
+    body.appendChild(row);
+  }
+  for (const failure of data.failures) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 5;
+    cell.textContent = `${failure.path}: ${failure.message}`;
+    row.appendChild(cell);
+    body.appendChild(row);
+  }
+  if (!data.findings.length && !data.failures.length) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 5;
+    cell.textContent = 'No findings from the current rules. This does not prove the code is secure.';
+    row.appendChild(cell);
+    body.appendChild(row);
+  }
+  table.append(head, body);
+  folderResults.replaceChildren(table);
+}
+
+async function reviewSourceCode() {
+  const path = document.getElementById('scanPath').value.trim();
+  if (!path) {
+    scanResult.textContent = 'Choose a source-code file or folder, or enter its full path first.';
+    return;
+  }
+  const button = document.getElementById('reviewCodeButton');
+  button.disabled = true;
+  fileScanButton.disabled = true;
+  browseFileButton.disabled = true;
+  browseFolderButton.disabled = true;
+  clearFolderResults();
+  scanResult.textContent = 'Reviewing selected source code with Morpheus local rules...';
+  try {
+    const result = await requestJson('/api/review-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    showCodeReviewResults(result);
+    scanResult.textContent =
+      `Reviewed ${result.files_scanned} source file${result.files_scanned === 1 ? '' : 's'} with ${result.ruleset}; found ${result.findings.length} finding${result.findings.length === 1 ? '' : 's'}. ` +
+      `Rules are heuristic, can miss issues, and are not a security certification.${result.truncated ? ' Review stopped at a configured limit.' : ''}`;
+  } catch (error) {
+    scanResult.textContent = `Code review failed: ${error.message}`;
+  } finally {
+    button.disabled = false;
+    fileScanButton.disabled = false;
+    browseFileButton.disabled = false;
+    browseFolderButton.disabled = false;
+  }
+}
+
+async function scanFolder(files) {
+  if (!files.length) return;
+  if (files.length > maxFolderFiles) {
+    scanResult.textContent = `Folder contains ${files.length} files; the limit is ${maxFolderFiles}. Choose a smaller folder.`;
+    return;
+  }
+  const totalBytes = files.reduce((total, file) => total + file.size, 0);
+  if (totalBytes > maxFolderBytes) {
+    scanResult.textContent = 'Folder exceeds the 30 GB total scan limit. Choose a smaller folder.';
+    return;
+  }
+  const oversized = files.filter(file => file.size > maxFileBytes);
+  if (oversized.length) {
+    scanResult.textContent = `${oversized.length} file${oversized.length === 1 ? '' : 's'} exceed the 100 MB per-file limit. Remove them or choose a smaller folder.`;
+    return;
+  }
+
+  const results = [];
+  const failures = [];
+  fileScanButton.disabled = true;
+  browseFileButton.disabled = true;
+  browseFolderButton.disabled = true;
+  document.getElementById('reviewCodeButton').disabled = true;
+  clearFolderResults();
+  try {
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
+      scanResult.textContent = `Scanning file ${index + 1} of ${files.length}: ${file.webkitRelativePath || file.name}`;
+      const data = new FormData();
+      data.append('file', file, file.webkitRelativePath || file.name);
+      try {
+        results.push(await requestJson('/api/scan-upload', { method: 'POST', body: data }));
+      } catch (error) {
+        if (error.message.startsWith('Cannot reach the local service.')) throw error;
+        failures.push({ name: file.webkitRelativePath || file.name, message: error.message });
+      }
+    }
+    showFolderResults(results, failures);
+    const flagged = results.filter(result => Array.isArray(result.reasons) && result.reasons.length).length;
+    scanResult.textContent = `Morpheus checked ${results.length} files and noticed patterns in ${flagged}. These notes are heuristic and are not a malware verdict.${failures.length ? ` ${failures.length} files could not be checked.` : ''}`;
+  } catch (error) {
+    showFolderResults(results, failures);
+    scanResult.textContent = `Folder scan stopped: ${error.message} Scanned ${results.length} of ${files.length} files.`;
+    setConnectionStatus('Local service unavailable; retrying', true);
+  } finally {
+    fileScanButton.disabled = false;
+    browseFileButton.disabled = false;
+    browseFolderButton.disabled = false;
+    document.getElementById('reviewCodeButton').disabled = false;
+    folderInput.value = '';
+  }
+}
+
+fileScanButton.addEventListener('click', analyzeFilePath);
+document.getElementById('reviewCodeButton').addEventListener('click', reviewSourceCode);
+async function updateConfigFromToggle(toggle, change, errorLabel) {
+  const previous = !toggle.checked;
+  toggle.disabled = true;
+  try {
+    const settingsPassword = await requestSettingsPassword();
+    const headers = { 'Content-Type': 'application/json' };
+    if (settingsPassword) headers['X-Morpheus-Settings-Password'] = settingsPassword;
+    const config = await requestJson('/api/config', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(change(toggle.checked)),
+    });
+    document.getElementById('quarantineState').textContent = config.automatic_quarantine ? 'ON' : 'OFF';
+    downloadMonitoring.checked = Boolean(config.download_monitoring);
+    quarantineDownloads.checked = Boolean(config.automatic_quarantine_downloads);
+    document.getElementById('downloadMonitorState').textContent = config.download_monitoring ? 'Downloads: ON' : 'Downloads: OFF';
+    downloadDirectoryPath.value = config.download_directory || downloadDirectoryPath.value;
+    dnsEntropyMonitoring.checked = Boolean(config.dns_entropy_monitoring);
+    powershellLogMonitoring.checked = Boolean(config.powershell_log_monitoring);
+    processTreeMonitoring.checked = config.process_tree_monitoring !== false;
+    canaryMonitoring.checked = Boolean(config.canary_monitoring);
+    document.getElementById('dnsMonitorStatus').textContent = config.dns_entropy_monitoring
+      ? 'Enabled. New DNS cache entries are reviewed locally.'
+      : 'Off. No DNS names are being checked.';
+    document.getElementById('powershellMonitorStatus').textContent = config.powershell_log_monitoring
+      ? 'Enabled. New event 4104 records are reviewed locally; raw script text is not stored.'
+      : 'Off. PowerShell event records are not being read.';
+    document.getElementById('canaryMonitorStatus').textContent = config.canary_monitoring
+      ? 'Enabled. Harmless markers are checked only inside the Morpheus data folder.'
+      : 'Off. No canary files are being monitored.';
+  } catch (error) {
+    toggle.checked = previous;
+    scanResult.textContent = `${errorLabel}: ${error.message}`;
+  } finally {
+    toggle.disabled = false;
+  }
+}
+
+function requestSettingsPassword() {
+  if (!settingsPasswordConfigured) return '';
+  const password = document.getElementById('ownerPasswordInput').value;
+  if (!password) throw new Error('Enter the owner settings password shown in the owner settings panel.');
+  return password;
+}
+
+function setFirewallWorkerState(status) {
+    const state = document.getElementById('firewallWorkerState');
+    const ready = Boolean(status.available);
+    state.classList.toggle('error', !ready);
+    state.lastElementChild.textContent = status.message || (
+      ready ? 'The firewall service is ready.' : 'The firewall service is unavailable.'
+    );
+    document.getElementById('startFirewallWorkerButton').hidden =
+      ready || !status.installed || status.running;
+}
+
+function renderFirewallRules(rules) {
+    const container = document.getElementById('firewallRules');
+    container.replaceChildren();
+    if (!Array.isArray(rules) || !rules.length) {
+      const empty = document.createElement('p');
+      empty.className = 'password-state';
+      empty.textContent = 'No Morpheus firewall rules found.';
+      container.appendChild(empty);
+      return;
+    }
+    for (const rule of rules) {
+      const row = document.createElement('div');
+      row.className = 'firewall-rule';
+      const address = document.createElement('span');
+      address.textContent = rule.remote_ip || rule.name;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'danger';
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', () => removeFirewallRule(rule.name));
+      row.append(address, remove);
+      container.appendChild(row);
+    }
+}
+
+async function loadFirewallRules() {
+  if (firewallRulesLoading) return;
+  firewallRulesLoading = true;
+  const container = document.getElementById('firewallRules');
+  container.textContent = 'Loading Morpheus firewall rules...';
+  try {
+    const rules = await requestJson('/api/firewall', {
+      signal: AbortSignal.timeout(5000)
+    });
+    renderFirewallRules(rules);
+    firewallRulesLoaded = true;
+  } catch (error) {
+    container.textContent = `Could not load firewall rules: ${error.message}`;
+  } finally {
+    firewallRulesLoading = false;
+  }
+}
+
+async function saveOwnerPassword() {
+    const form = document.getElementById('settingsPasswordForm');
+    const message = document.getElementById('passwordFormMessage');
+    const password = document.getElementById('newOwnerPassword').value;
+    const confirmation = document.getElementById('confirmOwnerPassword').value;
+    message.className = 'password-form-message';
+    if (password.length < 10) {
+      message.textContent = 'Choose a password with at least 10 characters.';
+      return;
+    }
+    if (password !== confirmation) {
+      message.className = 'password-form-message error';
+      message.textContent = 'The two passwords do not match. Please check and try again.';
+      return;
+    }
+    try {
+      await requestJson('/api/settings-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          password,
+          current_password: settingsPasswordConfigured
+            ? document.getElementById('ownerPasswordInput').value
+            : null,
+        })
+      });
+      settingsPasswordConfigured = true;
+      document.getElementById('ownerPasswordInput').value = '';
+      document.getElementById('newOwnerPassword').value = '';
+      document.getElementById('confirmOwnerPassword').value = '';
+      form.hidden = true;
+      message.textContent = '';
+      await refreshDashboard();
+      document.getElementById('settingsPasswordState').textContent =
+        'Password saved. Enter it above when confirming protected changes.';
+    } catch (error) {
+      message.className = 'password-form-message error';
+      message.textContent = `Could not save password: ${error.message}`;
+    }
+}
+
+async function addFirewallRule() {
+    const remoteIp = document.getElementById('firewallIp').value.trim();
+    const status = document.getElementById('firewallActionStatus');
+    status.className = 'result';
+    if (!remoteIp) {
+      status.className = 'result error';
+      status.textContent = 'Enter a public IPv4 address to block.';
+      return;
+    }
+    if (!window.confirm(`Add an outbound firewall block for ${remoteIp}? This can disrupt connectivity.`)) return;
+    try {
+      const settingsPassword = await requestSettingsPassword();
+      await requestJson('/api/firewall', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(settingsPassword ? { 'X-Morpheus-Settings-Password': settingsPassword } : {})
+        },
+        body: JSON.stringify({ remote_ip: remoteIp })
+      });
+      document.getElementById('firewallIp').value = '';
+      document.getElementById('ownerPasswordInput').value = '';
+      status.textContent = `Windows Firewall is now set to block outbound connections to ${remoteIp}.`;
+      await refreshDashboard(true);
+    } catch (error) {
+      status.className = 'result error';
+      status.textContent = `Could not block ${remoteIp}: ${error.message}`;
+    }
+}
+
+async function removeFirewallRule(name) {
+    if (!window.confirm(`Remove Morpheus firewall rule ${name}?`)) return;
+    try {
+      const settingsPassword = await requestSettingsPassword();
+      await requestJson(`/api/firewall/${encodeURIComponent(name)}`, {
+        method: 'DELETE',
+        ...(settingsPassword ? { headers: { 'X-Morpheus-Settings-Password': settingsPassword } } : {})
+      });
+      document.getElementById('ownerPasswordInput').value = '';
+      await refreshDashboard(true);
+    } catch (error) {
+      document.getElementById('firewallActionStatus').className = 'result error';
+      document.getElementById('firewallActionStatus').textContent = `Could not remove rule: ${error.message}`;
+  }
+}
+
+async function startFirewallService() {
+  const button = document.getElementById('startFirewallWorkerButton');
+  const status = document.getElementById('firewallActionStatus');
+  button.disabled = true;
+  status.className = 'result';
+  status.textContent = 'Requesting administrator approval to start the firewall service...';
+  try {
+    if (!window.morpheus || typeof window.morpheus.startFirewallService !== 'function') {
+      throw new Error('Use the installed Windows desktop app to start this service.');
+    }
+    await window.morpheus.startFirewallService();
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    const worker = await requestJson('/api/firewall/worker');
+    setFirewallWorkerState(worker);
+    if (!worker.available) throw new Error(worker.message);
+    status.textContent = 'Firewall service started and ready.';
+    await loadFirewallRules();
+  } catch (error) {
+    status.className = 'result error';
+    status.textContent = `Could not start the firewall service: ${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+document.getElementById('automaticQuarantine').addEventListener('change', event => {
+  updateConfigFromToggle(event.target, enabled => ({ automatic_quarantine: enabled }), 'Could not update process quarantine setting');
+});
+downloadMonitoring.addEventListener('change', event => {
+  if (event.target.checked && !window.confirm('Morpheus will monitor new executable and script files in your Windows Downloads folder. Files stay on this device. If enabled, suspicious files may be moved to quarantine and can be restored. Continue?')) {
+    event.target.checked = false;
+    return;
+  }
+  updateConfigFromToggle(event.target, enabled => ({ download_monitoring: enabled }), 'Could not update download monitoring');
+});
+async function chooseDownloadFolder() {
+  const status = document.getElementById('scanResult');
+  if (!window.morpheus || typeof window.morpheus.selectDownloadFolder !== 'function') {
+    status.textContent = 'Choosing a monitoring folder requires the installed Morpheus desktop app.';
+    return;
+  }
+  browseDownloadFolderButton.disabled = true;
+  try {
+    const path = await window.morpheus.selectDownloadFolder();
+    if (!path) return;
+    const settingsPassword = await requestSettingsPassword();
+    const headers = { 'Content-Type': 'application/json' };
+    if (settingsPassword) headers['X-Morpheus-Settings-Password'] = settingsPassword;
+    const config = await requestJson('/api/config', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ download_directory: path }),
+    });
+    downloadDirectoryPath.value = config.download_directory || path;
+    status.textContent = `Download monitoring folder saved: ${downloadDirectoryPath.value}. Newly added supported files will be checked when monitoring is on.`;
+    document.getElementById('ownerPasswordInput').value = '';
+  } catch (error) {
+    status.textContent = `Could not set download monitoring folder: ${error.message}`;
+  } finally {
+    browseDownloadFolderButton.disabled = false;
+  }
+}
+browseDownloadFolderButton.addEventListener('click', chooseDownloadFolder);
+dnsEntropyMonitoring.addEventListener('change', event => {
+  if (event.target.checked && !window.confirm('Morpheus will periodically read the Windows DNS client cache and store only review alerts for unusually random names. This does not capture packets or block DNS. Continue?')) {
+    event.target.checked = false;
+    return;
+  }
+  updateConfigFromToggle(event.target, enabled => ({ dns_entropy_monitoring: enabled }), 'Could not update DNS monitoring');
+});
+powershellLogMonitoring.addEventListener('change', event => {
+  if (event.target.checked && !window.confirm('Morpheus will read new PowerShell Operational event 4104 records when available. Script text is analyzed in memory and is not stored; only hashes and pattern names are logged. Existing events are not analyzed on startup. Continue?')) {
+    event.target.checked = false;
+    return;
+  }
+  updateConfigFromToggle(event.target, enabled => ({ powershell_log_monitoring: enabled }), 'Could not update PowerShell monitoring');
+});
+processTreeMonitoring.addEventListener('change', event => {
+  if (event.target.checked && !window.confirm('Morpheus will record process names, IDs, and parent-child relationships locally. It will not read command lines or process memory. Continue?')) {
+    event.target.checked = false;
+    return;
+  }
+  updateConfigFromToggle(event.target, enabled => ({ process_tree_monitoring: enabled }), 'Could not update process-tree monitoring');
+});
+canaryMonitoring.addEventListener('change', event => {
+  if (event.target.checked && !window.confirm('Morpheus will create two harmless decoy text files in its own data folder and alert if either changes or disappears. No files are placed in public or user document folders. Continue?')) {
+    event.target.checked = false;
+    return;
+  }
+  updateConfigFromToggle(event.target, enabled => ({ canary_monitoring: enabled }), 'Could not update canary monitoring');
+});
+quarantineDownloads.addEventListener('change', event => {
+  if (event.target.checked && !window.confirm('Morpheus will automatically move new Downloads files that exceed its local heuristic threshold into quarantine. False positives are possible; quarantined files can be restored. Continue?')) {
+    event.target.checked = false;
+    return;
+  }
+  updateConfigFromToggle(event.target, enabled => ({ automatic_quarantine_downloads: enabled }), 'Could not update download quarantine');
+});
+document.getElementById('scanPath').addEventListener('keydown', event => {
+  if (event.key === 'Enter') analyzeFilePath();
+});
+browseFileButton.addEventListener('click', async () => {
+  try {
+    const path = window.morpheus && typeof window.morpheus.selectFile === 'function'
+      ? await window.morpheus.selectFile()
+      : null;
+    if (path) document.getElementById('scanPath').value = path;
+  } catch (error) {
+    scanResult.textContent = `Could not choose file: ${error.message}`;
+  }
+});
+browseFolderButton.addEventListener('click', async () => {
+  if (window.morpheus && typeof window.morpheus.selectFolder === 'function') {
+    try {
+      const path = await window.morpheus.selectFolder();
+      if (path) {
+        document.getElementById('scanPath').value = path;
+        await scanFolderPath(path);
+      }
+    } catch (error) {
+      scanResult.textContent = `Could not choose folder: ${error.message}`;
+    }
+    return;
+  }
+  folderInput.click();
+});
+folderInput.addEventListener('change', () => scanFolder(Array.from(folderInput.files || [])));
+document.getElementById('settingsPasswordButton').addEventListener('click', () => {
+  document.getElementById('settingsPasswordForm').hidden = false;
+  document.getElementById('newOwnerPassword').focus();
+});
+document.getElementById('cancelOwnerPasswordButton').addEventListener('click', () => {
+  document.getElementById('settingsPasswordForm').hidden = true;
+  document.getElementById('passwordFormMessage').textContent = '';
+});
+document.getElementById('settingsPasswordForm').addEventListener('submit', event => {
+  event.preventDefault();
+  return saveOwnerPassword();
+});
+document.getElementById('addFirewallRuleButton').addEventListener('click', addFirewallRule);
+document.getElementById('startFirewallWorkerButton').addEventListener('click', startFirewallService);
+
+runScanButton.addEventListener('click', runScan);
+scanPanelButton.addEventListener('click', runScan);
+refreshButton.addEventListener('click', () => refresh(true));
+refresh();
+setInterval(() => {
+  if (!refreshButton.disabled) refresh();
+}, 10000);
+</script>
+</body>
+</html>

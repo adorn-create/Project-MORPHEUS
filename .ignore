@@ -1,0 +1,13 @@
+node_modules/
+.git/
+.venv/
+venv/
+env/
+dist/
+build/
+.next/
+.idea/
+.vscode/
+*.log/
+.aider.tags.cache.v4/
+.aider-desk/

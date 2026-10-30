@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+data/
+backend-build/
+worker-build/
+dist/
+.mypy_cache/
+.pytest_cache/
+.aider*
