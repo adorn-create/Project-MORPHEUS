@@ -1,4 +1,4 @@
-# Morpheus Defense MVP
+## Morpheus Defense MVP
 
 A local Windows defensive endpoint prototype featuring process telemetry, an explainable proprietary behavior model, SQLite attack timelines, controlled quarantine, optional outbound firewall blocking, and an API/dashboard.
 
@@ -35,7 +35,7 @@ npm install
 npm run app
 ```
 
-Install the Python build extra before building the installer:
+## Install the Python build extra before building the installer:
 
 ```powershell
 python -m pip install -e ".[build]"
@@ -78,7 +78,7 @@ The desktop app starts at Windows sign-in by default and can be disabled from it
 
 The prototype does not guarantee detection or prevention of every intrusion or download. Keep Microsoft Defender and Windows Firewall enabled.
 
-### Signed Windows release
+## Signed Windows release
 
 The Windows installer build packages Electron's JavaScript app in an ASAR archive with Electron's embedded ASAR integrity validation enabled. For publisher verification, optionally configure an Authenticode signing certificate using `CSC_LINK` and `CSC_KEY_PASSWORD` in the build environment. Do not commit certificate files or passwords. Verify the installer publisher/signature in Windows before distributing it.
 
