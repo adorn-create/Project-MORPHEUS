@@ -20,12 +20,14 @@ from fastapi.templating import Jinja2Templates
 from .engine import DefenseEngine
 from .downloads import DownloadMonitor
 from .code_review import CodeReview
+from .local_assistant import LocalAssistant, LocalAssistantError
 from .scanner import MAX_SCAN_FILE_SIZE, ProtectedSystemPathError, StaticScanner
 from .sysmon import SysmonStatus
 from .timeline import AttackTimeline
 from .quarantine import QuarantineManager
 from .models import (
     CodeReviewRequest,
+    AssistantChatRequest,
     ConfigUpdate,
     FirewallRuleRequest,
     QuarantineRequest,
@@ -52,6 +54,7 @@ if not CONFIG_PATH.exists():
 engine = DefenseEngine(DATA_ROOT, CONFIG_PATH)
 scanner = StaticScanner()
 code_reviewer = CodeReview()
+local_assistant = LocalAssistant()
 download_monitor = DownloadMonitor(scanner, engine.quarantine, engine.db, engine.journal)
 sysmon = SysmonStatus()
 timeline = AttackTimeline(engine.db)
@@ -176,6 +179,22 @@ def review_code(payload: CodeReviewRequest):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except OSError as exc:
         raise HTTPException(status_code=404, detail=f"Could not read the selected source path: {exc}") from exc
+
+@app.get("/api/assistant/status")
+def assistant_status():
+    return local_assistant.status()
+
+@app.post("/api/assistant/chat")
+def assistant_chat(payload: AssistantChatRequest):
+    try:
+        answer = local_assistant.chat(
+            payload.model,
+            payload.message,
+            [message.model_dump() for message in payload.history],
+        )
+        return {"model": payload.model, "answer": answer}
+    except LocalAssistantError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 @app.post("/api/scan-upload")
 def scan_upload(file: UploadFile = File(...)):

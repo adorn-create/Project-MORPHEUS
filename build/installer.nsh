@@ -15,9 +15,12 @@
     MessageBox MB_ICONSTOP "Morpheus Firewall Worker could not start. The installer will stop."
     Abort
   ${EndIf}
+  CreateDirectory "$SMPROGRAMS\Morpheus Defense"
+  CreateShortCut "$SMPROGRAMS\Morpheus Defense\Uninstall Morpheus Defense.lnk" "$INSTDIR\resources\uninstall-helper\MorpheusUninstallHelper.exe"
 !macroend
 
 !macro customUnInstall
+  Delete "$SMPROGRAMS\Morpheus Defense\Uninstall Morpheus Defense.lnk"
   nsExec::ExecToLog '"$INSTDIR\resources\firewall-worker\morpheus-firewall-worker.exe" --wait=10 stop'
   Pop $0
   nsExec::ExecToLog '"$INSTDIR\resources\firewall-worker\morpheus-firewall-worker.exe" remove'

@@ -4,6 +4,9 @@ __pycache__/
 data/
 backend-build/
 worker-build/
+uninstall-helper-build/
+uninstall-helper/bin/
+uninstall-helper/obj/
 dist/
 .mypy_cache/
 .pytest_cache/

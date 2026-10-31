@@ -67,6 +67,9 @@ const ids = [
   'dnsEntropyMonitoring', 'powershellLogMonitoring', 'processTreeMonitoring',
   'canaryMonitoring', 'dnsMonitorStatus', 'powershellMonitorStatus',
   'canaryMonitorStatus', 'processTree', 'riskLevel', 'riskDetails',
+  'assistantModel', 'assistantStatus', 'assistantConversation',
+  'assistantForm', 'assistantQuestion', 'sendAssistantQuestion',
+  'refreshAssistantModels',
   'downloadDirectoryPath', 'browseDownloadFolderButton',
   'eventCount', 'monitoringState', 'lastScanTime', 'downloadMonitorState',
   'quarantineState', 'toolCatalogCount', 'settingsPasswordState',
@@ -130,6 +133,20 @@ async function fetch(url, options = {}) {
   }
   if (url === '/api/sysmon') {
     return response({ installed: false, install_help: '' });
+  }
+  if (url === '/api/assistant/status') {
+    return response({
+      available: true,
+      ready: true,
+      models: ['local-test-model'],
+      message: 'Local Ollama is ready.',
+    });
+  }
+  if (url === '/api/assistant/chat' && method === 'POST') {
+    return response({
+      model: 'local-test-model',
+      answer: 'Review the alert and verify the process source.',
+    });
   }
   if (url === '/api/status') {
     return response({
@@ -242,6 +259,16 @@ async function main() {
 
   await elements.get('scanPanelButton').dispatch('click');
   assert.equal(calls.filter(call => call.url === '/api/scan').length, 2);
+  assert.ok(calls.some(call => call.url === '/api/assistant/status'));
+  assert.equal(elements.get('assistantModel').value, 'local-test-model');
+  elements.get('assistantQuestion').value = 'What does this alert mean?';
+  await elements.get('assistantForm').dispatch('submit', { preventDefault() {} });
+  assert.ok(calls.some(call => call.url === '/api/assistant/chat' && call.method === 'POST'));
+  assert.match(elements.get('assistantStatus').textContent, /Answered by local model/);
+  assert.equal(
+    elements.get('assistantConversation').children.at(-1).textContent,
+    'Review the alert and verify the process source.'
+  );
 
   await elements.get('refreshButton').dispatch('click');
   const firewallReadsAfterManualRefresh = calls.filter(

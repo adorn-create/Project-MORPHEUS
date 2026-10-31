@@ -31,7 +31,7 @@
         linear-gradient(180deg, #0b1118 0%, #080d13 100%);
       background-attachment: fixed;
     }
-    button, input { font: inherit; }
+    button, input, select, textarea { font: inherit; }
     button {
       min-height: 42px;
       padding: 0 16px;
@@ -128,7 +128,9 @@
     .field-row { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 14px; }
     .field-row input { flex: 1 1 220px; }
     .field-row button { white-space: nowrap; }
-    input { width: 100%; min-width: 0; min-height: 42px; padding: 0 12px; border: 1px solid var(--border); border-radius: 9px; background: #081625; color: #e8f7ff; }
+    input, select, textarea { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: #081625; color: #e8f7ff; }
+    input, select { min-height: 42px; }
+    textarea { min-height: 88px; resize: vertical; }
     .result { min-height: 22px; margin: 14px 0 0; color: var(--muted); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
     .result.error { color: #ff9aa5; }
     .password-form { display: grid; gap: 10px; margin-top: 12px; }
@@ -141,6 +143,14 @@
     .folder-results table { min-width: 520px; }
     .folder-results th, .folder-results td { padding: 9px; }
     .folder-results:empty { display: none; }
+    .assistant-controls { display: grid; grid-template-columns: minmax(180px, 1fr) auto; gap: 10px; align-items: end; margin-top: 14px; }
+    .assistant-controls label { display: grid; gap: 6px; color: var(--muted); font-size: 13px; }
+    .assistant-status { min-height: 20px; margin: 10px 0; color: var(--muted); font-size: 13px; }
+    .assistant-conversation { display: grid; gap: 9px; max-height: 340px; min-height: 100px; overflow-y: auto; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: rgba(8, 13, 19, .62); }
+    .assistant-message { max-width: min(820px, 92%); padding: 10px 13px; border-radius: 9px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; }
+    .assistant-message.user { justify-self: end; background: #20505d; color: #effbff; }
+    .assistant-message.assistant { justify-self: start; background: var(--panel-raised); color: #dce9f7; }
+    .assistant-form { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; margin-top: 12px; }
     .timeline-list { display: grid; gap: 10px; }
     .timeline-item { padding: 13px 14px; border: 1px solid var(--border); border-radius: 8px; background: rgba(8, 13, 19, .62); }
     .timeline-title { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 14px; font-weight: 650; }
@@ -176,6 +186,7 @@
       .tools-grid { grid-template-columns: 1fr; }
       .overview { align-items: flex-start; flex-direction: column; }
       .scan-panel { align-items: flex-start; flex-direction: column; }
+      .assistant-controls, .assistant-form { grid-template-columns: 1fr; }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
@@ -264,6 +275,25 @@
         <div class="section-heading"><h2 id="sysmonTitle">Sysmon status</h2></div>
         <div class="sysmon-copy" id="sysmonStatus">Checking local installation...</div>
       </div>
+    </section>
+
+    <section class="section panel" aria-labelledby="assistantTitle">
+      <div class="section-heading">
+        <div><h2 id="assistantTitle">Local Morpheus assistant</h2><p class="subtle">Ask about alerts, dashboard features, or defensive next steps.</p></div>
+      </div>
+      <p class="subtle">Uses models already installed in Ollama on this device. Messages go only to the local Ollama service; chat history is kept in this page's memory and is not saved by Morpheus. The assistant is read-only and cannot run scans or change settings. Answers can be wrong.</p>
+      <div class="assistant-controls">
+        <label for="assistantModel">Local model<select id="assistantModel" disabled><option value="">Checking local Ollama...</option></select></label>
+        <button id="refreshAssistantModels" type="button">Refresh models</button>
+      </div>
+      <p class="assistant-status" id="assistantStatus" role="status" aria-live="polite">Checking whether local Ollama is available...</p>
+      <div class="assistant-conversation" id="assistantConversation" role="log" aria-live="polite" aria-label="Assistant conversation">
+        <div class="assistant-message assistant">I can explain Morpheus alerts and suggest cautious defensive next steps. I cannot take actions on your device.</div>
+      </div>
+      <form class="assistant-form" id="assistantForm">
+        <textarea id="assistantQuestion" maxlength="2000" rows="3" aria-label="Question for the local assistant" placeholder="Ask a question about Morpheus Defense..."></textarea>
+        <button class="primary" id="sendAssistantQuestion" type="submit" disabled>Send</button>
+      </form>
     </section>
 
     <section class="section tools-grid" aria-label="Expansion monitoring">
@@ -359,6 +389,13 @@ const dnsEntropyMonitoring = document.getElementById('dnsEntropyMonitoring');
 const powershellLogMonitoring = document.getElementById('powershellLogMonitoring');
 const processTreeMonitoring = document.getElementById('processTreeMonitoring');
 const canaryMonitoring = document.getElementById('canaryMonitoring');
+const assistantModel = document.getElementById('assistantModel');
+const assistantStatus = document.getElementById('assistantStatus');
+const assistantConversation = document.getElementById('assistantConversation');
+const assistantForm = document.getElementById('assistantForm');
+const assistantQuestion = document.getElementById('assistantQuestion');
+const sendAssistantQuestion = document.getElementById('sendAssistantQuestion');
+const assistantHistory = [];
 const maxFolderFiles = 10000;
 const maxFolderBytes = 30 * 1024 * 1024 * 1024;
 const maxFileBytes = 100 * 1024 * 1024;
@@ -615,6 +652,92 @@ function renderRiskSummary(data) {
   document.getElementById('riskDetails').textContent = data.signals.length
     ? `${data.signals.map(signal => signal.label).join('; ')}. ${data.explanation}`
     : `No recognized alerts in the last ${data.window_minutes} minutes. ${data.explanation}`;
+}
+
+async function refreshAssistantModels() {
+  const refreshButton = document.getElementById('refreshAssistantModels');
+  const previousModel = assistantModel.value;
+  refreshButton.disabled = true;
+  assistantStatus.textContent = 'Checking local Ollama...';
+  sendAssistantQuestion.disabled = true;
+  try {
+    const data = await requestJson('/api/assistant/status');
+    if (!Array.isArray(data.models) || typeof data.message !== 'string') {
+      throw new Error('The local assistant status response is invalid.');
+    }
+    assistantModel.replaceChildren();
+    for (const modelName of data.models) {
+      const option = document.createElement('option');
+      option.value = modelName;
+      option.textContent = modelName;
+      assistantModel.appendChild(option);
+    }
+    if (data.models.length) {
+      assistantModel.value = data.models.includes(previousModel) ? previousModel : data.models[0];
+      assistantModel.disabled = false;
+      sendAssistantQuestion.disabled = false;
+    } else {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'No local models available';
+      assistantModel.appendChild(option);
+      assistantModel.value = '';
+      assistantModel.disabled = true;
+    }
+    assistantStatus.textContent = data.message;
+  } catch (error) {
+    assistantModel.replaceChildren();
+    assistantModel.disabled = true;
+    assistantStatus.textContent = `Local assistant status unavailable: ${error.message}`;
+  } finally {
+    refreshButton.disabled = false;
+  }
+}
+
+function appendAssistantMessage(role, content) {
+  const message = document.createElement('div');
+  message.className = `assistant-message ${role}`;
+  message.textContent = content;
+  assistantConversation.appendChild(message);
+  assistantConversation.scrollTop = assistantConversation.scrollHeight;
+}
+
+async function sendAssistantChat(event) {
+  event.preventDefault();
+  const question = assistantQuestion.value.trim();
+  if (!question) {
+    assistantStatus.textContent = 'Type a question before sending.';
+    return;
+  }
+  if (!assistantModel.value) {
+    assistantStatus.textContent = 'Select an installed local model first.';
+    return;
+  }
+
+  const model = assistantModel.value;
+  const history = assistantHistory.slice(-8);
+  appendAssistantMessage('user', question);
+  assistantQuestion.value = '';
+  sendAssistantQuestion.disabled = true;
+  assistantStatus.textContent = 'Waiting for the local model...';
+  try {
+    const result = await requestJson('/api/assistant/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, message: question, history }),
+    });
+    appendAssistantMessage('assistant', result.answer);
+    assistantHistory.push(
+      { role: 'user', content: question },
+      { role: 'assistant', content: result.answer },
+    );
+    if (assistantHistory.length > 8) assistantHistory.splice(0, assistantHistory.length - 8);
+    assistantStatus.textContent = `Answered by local model ${result.model}. Verify important security advice before acting.`;
+  } catch (error) {
+    assistantStatus.textContent = `Local assistant request failed: ${error.message}`;
+  } finally {
+    sendAssistantQuestion.disabled = !assistantModel.value;
+  }
 }
 
 async function refreshDashboard(includeFirewall = false) {
@@ -1291,11 +1414,14 @@ document.getElementById('settingsPasswordForm').addEventListener('submit', event
 });
 document.getElementById('addFirewallRuleButton').addEventListener('click', addFirewallRule);
 document.getElementById('startFirewallWorkerButton').addEventListener('click', startFirewallService);
+document.getElementById('refreshAssistantModels').addEventListener('click', refreshAssistantModels);
+assistantForm.addEventListener('submit', sendAssistantChat);
 
 runScanButton.addEventListener('click', runScan);
 scanPanelButton.addEventListener('click', runScan);
 refreshButton.addEventListener('click', () => refresh(true));
 refresh();
+refreshAssistantModels();
 setInterval(() => {
   if (!refreshButton.disabled) refresh();
 }, 10000);

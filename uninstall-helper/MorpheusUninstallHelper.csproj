@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>MorpheusUninstallHelper</AssemblyName>
+    <RootNamespace>Morpheus.Uninstaller</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\UninstallProtector.cs" Link="UninstallProtector.cs" />
+    <Compile Include="..\RegistryManager.cs" Link="RegistryManager.cs" />
+  </ItemGroup>
+</Project>

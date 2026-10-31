@@ -7,7 +7,8 @@
     "app": "electron .",
     "build:backend": "node scripts/build-backend.js",
     "build:firewall-worker": "node scripts/build-firewall-worker.js",
-    "build:win": "npm run build:backend && npm run build:firewall-worker && electron-builder --win nsis",
+    "build:uninstall-helper": "node scripts/build-uninstall-helper.js",
+    "build:win": "npm run build:backend && npm run build:firewall-worker && npm run build:uninstall-helper && electron-builder --win nsis",
     "test:ui": "node tests/test-dashboard-ui.cjs"
   },
   "devDependencies": {
@@ -38,6 +39,10 @@
       {
         "from": "worker-build/dist/morpheus-firewall-worker",
         "to": "firewall-worker"
+      },
+      {
+        "from": "uninstall-helper-build/publish/MorpheusUninstallHelper.exe",
+        "to": "uninstall-helper/MorpheusUninstallHelper.exe"
       }
     ],
     "directories": {

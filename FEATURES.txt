@@ -7,6 +7,10 @@ Desktop dashboard
 - F11 toggles fullscreen; Escape exits fullscreen. The shortcut has no
   on-screen button.
 - Live dashboard status, recent detections, and ATT&CK-mapped timeline.
+- Optional Ollama-powered local chat assistant for explaining alerts and
+  Morpheus features. It has no tools and cannot make changes to the device.
+- Assistant requests go only to the local Ollama service; Morpheus does not
+  save chat history or install/download models.
 - Run a process activity scan and refresh the displayed data.
 - System tray controls, minimize-to-tray behavior, and optional startup at
   Windows sign-in.
