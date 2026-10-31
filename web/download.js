@@ -43,6 +43,7 @@ async function loadLatestRelease() {
     }
 
     headerDownload.href = installer.browser_download_url;
+    downloadButton.href = installer.browser_download_url;
     headerDownloadLabel.textContent = 'Download .exe';
     const size = formatBytes(installer.size);
     const version = release.tag_name ? `Latest release ${release.tag_name}` : 'Latest Windows release';
