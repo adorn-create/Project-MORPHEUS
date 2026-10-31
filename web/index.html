@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#07111f">
+    <meta
+      name="description"
+      content="Download Morpheus Defense, a local-first Windows security monitoring app with explainable alerts and source-code review."
+    >
+    <title>Morpheus Defense — Download</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+    <script src="download.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#" aria-label="Morpheus Defense home">
+        <span class="brand-mark" aria-hidden="true">M</span>
+        <span>MORPHEUS<span class="brand-light"> / DEFENSE</span></span>
+      </a>
+      <nav class="header-links" aria-label="Main navigation">
+        <a href="#features">Features</a>
+        <a href="#install">Install</a>
+        <a id="header-download" href="https://github.com/adorn-create/Project-MORPHEUS/releases">
+          <span id="header-download-label">Checking download…</span>
+          <span aria-hidden="true">↓</span>
+        </a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="status-dot"></span> LOCAL-FIRST WINDOWS SECURITY</div>
+          <h1>Know what’s<br>happening on<br><span class="gradient-text">your device.</span></h1>
+          <p class="hero-description">
+            Review clear, local security signals and scan source code with Morpheus Defense.
+            No account required. You stay in control.
+          </p>
+          <div class="download-actions">
+            <a
+              class="button button-primary download-btn"
+              id="download-button"
+              href="https://github.com/adorn-create/Project-MORPHEUS/releases/download/v0.1.0/Morpheus.Defense.Setup.0.1.0.exe"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 17v3h14v-3" /></svg>
+              <span id="download-label">Download Windows App (.exe)</span>
+              <span class="button-arrow" aria-hidden="true">↓</span>
+            </a>
+            <span class="platform-note">Windows 10/11 <span aria-hidden="true">·</span> 64-bit</span>
+          </div>
+          <p class="release-status" id="release-status" aria-live="polite">
+            Checking the latest published installer…
+          </p>
+          <p class="trust-note">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 2.8 8 7 10 4.2-2 7-5.5 7-10V6l-7-3Z" /><path d="m9 12 2 2 4-4" /></svg>
+            Heuristic alerts are for review, not a malware verdict.
+          </p>
+        </div>
+
+        <div class="hero-visual" aria-label="Illustration of the Morpheus Defense local security dashboard">
+          <div class="orb orb-one"></div>
+          <div class="orb orb-two"></div>
+          <div class="dashboard-card">
+            <div class="card-topline">
+              <div class="window-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+              <span>DEVICE OVERVIEW</span>
+              <span class="live-pill"><i></i> LOCAL</span>
+            </div>
+            <div class="device-heading">
+              <div>
+                <span class="muted-label">PROTECTION STATUS</span>
+                <h2>Monitoring active</h2>
+              </div>
+              <div class="shield-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 2.8 8 7 10 4.2-2 7-5.5 7-10V6l-7-3Z" /><path d="m9 12 2 2 4-4" /></svg>
+              </div>
+            </div>
+            <div class="metric-grid">
+              <div class="metric">
+                <span class="metric-icon icon-blue" aria-hidden="true">⌘</span>
+                <span class="muted-label">PROCESS SIGNALS</span>
+                <strong>Reviewable</strong>
+                <span class="metric-foot">Local activity checks</span>
+              </div>
+              <div class="metric">
+                <span class="metric-icon icon-purple" aria-hidden="true">{ }</span>
+                <span class="muted-label">SOURCE CODE</span>
+                <strong>Rule-based</strong>
+                <span class="metric-foot">Findings with line numbers</span>
+              </div>
+            </div>
+            <div class="activity-row">
+              <div class="activity-icon" aria-hidden="true">✓</div>
+              <div><strong>Your device, your call</strong><span>Review detections before taking action</span></div>
+              <span class="activity-arrow" aria-hidden="true">↗</span>
+            </div>
+            <div class="card-footer">
+              <span><i></i> Data stays on this device</span>
+              <span>EXPLAINABLE SIGNALS</span>
+            </div>
+          </div>
+          <div class="floating-tag"><span>01</span> Review. Don’t guess.</div>
+        </div>
+      </section>
+
+      <section class="feature-strip" id="features" aria-label="Highlights">
+        <article class="feature-item">
+          <span class="feature-number">01 / LOCAL</span>
+          <h2>Built for your device</h2>
+          <p>Monitoring and file analysis run locally. No account or cloud upload is required.</p>
+        </article>
+        <article class="feature-item">
+          <span class="feature-number">02 / EXPLAINABLE</span>
+          <h2>Signals you can inspect</h2>
+          <p>See why a review alert appeared, then decide what to do. Automatic isolation is not used.</p>
+        </article>
+        <article class="feature-item">
+          <span class="feature-number">03 / CODE REVIEW</span>
+          <h2>Rules, not guesswork</h2>
+          <p>Scan supported source files for selected risky patterns with line-specific guidance.</p>
+        </article>
+      </section>
+
+      <section class="install-section" id="install">
+        <div>
+          <span class="eyebrow">GET STARTED</span>
+          <h2>Up and running in a few steps.</h2>
+          <p>Download the Windows installer, open it, and follow the setup prompts.</p>
+        </div>
+        <ol class="install-steps">
+          <li><span>01</span><div><strong>Download</strong><p>Get the latest 64-bit Windows installer from GitHub Releases.</p></div></li>
+          <li><span>02</span><div><strong>Install</strong><p>Approve the installer when Windows asks. It installs Morpheus machine-wide.</p></div></li>
+          <li><span>03</span><div><strong>Review</strong><p>Open the dashboard and review alerts before taking action.</p></div></li>
+        </ol>
+      </section>
+
+      <section class="notice" aria-label="Important information">
+        <span class="notice-icon" aria-hidden="true">i</span>
+        <p>
+          Morpheus Defense is a defensive prototype. Its heuristic checks can miss threats or raise
+          false alarms. Keep Microsoft Defender enabled; Morpheus does not replace antivirus software.
+        </p>
+        <a href="https://github.com/adorn-create/Project-MORPHEUS/blob/main/README.md" target="_blank" rel="noopener noreferrer">Read the details <span aria-hidden="true">↗</span></a>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <a class="brand footer-brand" href="#">
+        <span class="brand-mark" aria-hidden="true">M</span>
+        <span>MORPHEUS<span class="brand-light"> / DEFENSE</span></span>
+      </a>
+      <span>Open source <span aria-hidden="true">·</span> Built for informed review</span>
+      <a href="https://github.com/adorn-create/Project-MORPHEUS" target="_blank" rel="noopener noreferrer">View on GitHub ↗</a>
+    </footer>
+  </body>
+</html>
