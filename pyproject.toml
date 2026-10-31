@@ -27,6 +27,9 @@ build = [
 [project.scripts]
 morpheus = "morpheus.main:cli"
 
+[tool.vercel]
+entrypoint = "morpheus.main:app"
+
 [tool.setuptools]
 packages = ["morpheus"]
 
