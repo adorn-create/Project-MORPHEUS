@@ -68,7 +68,7 @@ The dashboard refresh reports the audit journal's last known verification state 
 
 ### Firewall worker and owner settings
 
-The machine-wide installer registers a Windows service that runs with system privileges, but its named-pipe interface is restricted to the installing user's SID and it can only add blocks for public IPv4 addresses or remove Morpheus-owned firewall rules. It cannot scan files, launch arbitrary commands, or modify unrelated firewall rules. Use the dashboard's outbound firewall panel to make a change; blocking an address can interrupt network access. The service is stopped and removed by the normal Windows uninstaller.
+The machine-wide installer registers a Windows service that runs with system privileges, but its named-pipe interface is restricted to the installing user's SID and it can only add outbound blocks for globally routable IPv4 or IPv6 addresses or remove Morpheus-owned firewall rules. Morpheus manages rules in Windows Firewall; it is not a standalone firewall or kernel filtering driver. It cannot scan files, launch arbitrary commands, or modify unrelated firewall rules. Use the dashboard's outbound firewall panel to make a change; blocking an address can interrupt network access. The service is stopped and removed by the normal Windows uninstaller.
 
 The dashboard can optionally protect security-setting and firewall changes with a locally chosen owner password (10 characters minimum). Only a salted PBKDF2 hash is stored under the user's Morpheus data directory; email registration and OTP are not used. This is a confirmation gate for the dashboard, not a security boundary against malware or other processes running as the same Windows user. It does **not** prevent the device owner from uninstalling Morpheus through Windows. If the password is forgotten, close Morpheus and remove `settings-password.json` from the user's Morpheus data folder to reset the dashboard password. Local administrators can still inspect or change local app data.
 
@@ -91,3 +91,7 @@ python -m pytest
 npm run test:ui
 npm audit
 ```
+
+### Vercel Web Analytics
+
+The download website is plain HTML and uses the Vercel Analytics script in `web/index.html`. Enable Web Analytics in the Vercel project settings after deployment. The `@vercel/analytics/next` component is only for Next.js projects.

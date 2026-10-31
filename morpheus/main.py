@@ -34,7 +34,7 @@ from .models import (
     SettingsPasswordRequest,
 )
 from .firewall import FirewallWorkerError
-from .firewall_worker import parse_public_ipv4
+from .firewall_worker import parse_public_ip
 from .tool_catalog import TOOL_CATALOG
 from .expansion import DnsEntropyMonitor, PowerShellLogMonitor
 from .canary import CanaryMonitor
@@ -231,9 +231,9 @@ def add_firewall_rule(
     x_morpheus_settings_password: str | None = Header(default=None),
 ):
     require_settings_password(x_morpheus_settings_password)
-    address = parse_public_ipv4(payload.remote_ip)
+    address = parse_public_ip(payload.remote_ip)
     if address is None:
-        raise HTTPException(status_code=422, detail="Only public IPv4 addresses can be blocked.")
+        raise HTTPException(status_code=422, detail="Only globally routable IPv4 or IPv6 addresses can be blocked.")
     try:
         added = engine.firewall.block_remote(str(address))
     except FirewallWorkerError as exc:

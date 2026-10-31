@@ -6,17 +6,23 @@ WORKER_PIPE = r"\\.\pipe\MorpheusFirewallWorker"
 RULE_NAME_PATTERN = re.compile(r"^Morpheus-Block-[0-9a-f]{12}$")
 
 
-def parse_public_ipv4(value: str):
+def parse_public_ip(value: str):
     if not isinstance(value, str):
         return None
     try:
         address = ipaddress.ip_address(value)
     except ValueError:
         return None
-    if address.version != 4 or (
-        address.is_private or address.is_loopback or address.is_link_local
-        or address.is_unspecified or address.is_multicast or address.is_reserved
+    if not address.is_global or (
+        isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None
     ):
+        return None
+    return address
+
+
+def parse_public_ipv4(value: str):
+    address = parse_public_ip(value)
+    if address is None or address.version != 4:
         return None
     return address
 
@@ -27,9 +33,9 @@ def handle_worker_request(request: dict, firewall) -> dict:
 
     operation = request.get("operation")
     if operation == "add":
-        address = parse_public_ipv4(request.get("remote_ip", ""))
+        address = parse_public_ip(request.get("remote_ip", ""))
         if address is None:
-            return {"ok": False, "error": "Only public IPv4 addresses can be blocked."}
+            return {"ok": False, "error": "Only globally routable IPv4 or IPv6 addresses can be blocked."}
         try:
             return {"ok": bool(firewall.block_remote(str(address)))}
         except OSError as exc:

@@ -306,12 +306,12 @@
     <section class="section tools-grid" aria-label="Firewall and owner controls">
       <div class="panel" aria-labelledby="firewallTitle">
         <div class="section-heading"><h2 id="firewallTitle">Outbound firewall rules</h2></div>
-        <p class="subtle">Block a public IPv4 address or remove a Morpheus-owned rule. Changes may disrupt network access.</p>
+        <p class="subtle">Block one globally routable IPv4 or IPv6 address, or remove a Morpheus-owned rule. This manages outbound rules in Windows Firewall; changes may disrupt network access.</p>
         <div class="worker-state" id="firewallWorkerState" role="status"><span class="dot"></span><span>Checking privileged worker...</span></div>
         <button class="firewall-worker-button" id="startFirewallWorkerButton" type="button" hidden>Start firewall service (administrator approval)</button>
         <p class="result" id="firewallActionStatus" role="status" aria-live="polite"></p>
         <div class="field-row">
-          <input id="firewallIp" type="text" inputmode="decimal" aria-label="Public IPv4 address to block" placeholder="203.0.113.1">
+          <input id="firewallIp" type="text" inputmode="text" aria-label="Public IP address to block" placeholder="8.8.8.8 or 2001:4860:4860::8888">
           <button class="primary" id="addFirewallRuleButton" type="button">Block address</button>
         </div>
         <div class="firewall-rules" id="firewallRules"></div>
@@ -1110,7 +1110,7 @@ async function addFirewallRule() {
     status.className = 'result';
     if (!remoteIp) {
       status.className = 'result error';
-      status.textContent = 'Enter a public IPv4 address to block.';
+      status.textContent = 'Enter a globally routable IPv4 or IPv6 address to block.';
       return;
     }
     if (!window.confirm(`Add an outbound firewall block for ${remoteIp}? This can disrupt connectivity.`)) return;

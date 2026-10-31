@@ -2,7 +2,7 @@ import json
 import subprocess
 import uuid
 import os
-from .firewall_worker import RULE_NAME_PATTERN, WORKER_PIPE, parse_public_ipv4
+from .firewall_worker import RULE_NAME_PATTERN, WORKER_PIPE, parse_public_ip
 
 
 class FirewallWorkerError(RuntimeError):
@@ -14,7 +14,7 @@ class FirewallController:
         self.use_worker = os.name == "nt" if use_worker is None else use_worker
 
     def block_remote(self, remote_ip: str) -> bool:
-        address = parse_public_ipv4(remote_ip)
+        address = parse_public_ip(remote_ip)
         if address is None:
             return False
         if self.use_worker:
@@ -22,7 +22,9 @@ class FirewallController:
         rule = f"Morpheus-Block-{uuid.uuid4().hex[:12]}"
         result = subprocess.run([
             "netsh", "advfirewall", "firewall", "add", "rule",
-            f"name={rule}", "dir=out", "action=block", f"remoteip={remote_ip}/32",
+            f"name={rule}", "dir=out", "action=block", "enable=yes",
+            "profile=any", "protocol=any",
+            f"remoteip={address}/{address.max_prefixlen}",
         ], capture_output=True, text=True)
         return result.returncode == 0
 
