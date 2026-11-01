@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "process": {
+    "normalization_max": 0.95,
+    "lineage_correlation_bonus": 0.15,
+    "weights": {
+      "temporary_program_location": 0.34,
+      "many_remote_connections": 0.20,
+      "high_cpu": 0.16,
+      "new_executable": 0.12,
+      "unexpected_sensitive_connection": 0.13
+    },
+    "lineage_signal": "suspicious_process_lineage"
+  },
+  "events": {
+    "normalization_max": 100,
+    "multiple_signal_bonus": 10,
+    "weights": {
+      "dns_entropy": {
+        "label": "Unusually random new DNS name",
+        "weight": 25
+      },
+      "powershell_script_block": {
+        "label": "PowerShell script-block review pattern",
+        "weight": 30
+      },
+      "process_tree_review": {
+        "label": "Document application started a script host",
+        "weight": 25
+      },
+      "canary_file_change": {
+        "label": "Morpheus canary file changed or disappeared",
+        "weight": 35
+      },
+      "suspicious_process": {
+        "label": "Suspicious process behavior alert",
+        "weight": 25
+      },
+      "lolbin_command_pattern": {
+        "label": "Potentially unusual built-in tool command pattern",
+        "weight": 25
+      },
+      "known_security_tool": {
+        "label": "Known dual-use security tool is running",
+        "weight": 10
+      }
+    }
+  },
+  "risk_levels": [
+    {"below": 20, "level": "normal"},
+    {"below": 40, "level": "guarded"},
+    {"below": 70, "level": "elevated"},
+    {"below": 101, "level": "high"}
+  ]
+}

@@ -54,7 +54,7 @@ if not CONFIG_PATH.exists():
 engine = DefenseEngine(DATA_ROOT, CONFIG_PATH)
 scanner = StaticScanner()
 code_reviewer = CodeReview()
-local_assistant = OfflineAssistant()
+offline_helper = OfflineAssistant()
 download_monitor = DownloadMonitor(scanner, engine.quarantine, engine.db, engine.journal)
 sysmon = SysmonStatus()
 timeline = AttackTimeline(engine.db)
@@ -76,7 +76,7 @@ PASSWORD_HASH_ITERATIONS = 600_000
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     return Response(
-        content='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#07111f"/><path d="M12 48V16h8l12 15 12-15h8v32h-9V30L32 42 21 30v18z" fill="#66e3ff"/><circle cx="52" cy="12" r="5" fill="#7cf2bd"/></svg>',
+        content='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="background" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#152a3a"/><stop offset="1" stop-color="#09111c"/></linearGradient><linearGradient id="mark" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#79d8f4"/><stop offset="1" stop-color="#f0ad57"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#background)"/><path d="M32 6 52 13v15c0 14-8.6 23.8-20 30C20.6 51.8 12 42 12 28V13L32 6Z" fill="#132332" stroke="#477087" stroke-width="1.5"/><path d="M20 41V21h5l7 10 7-10h5v20h-6V30l-6 8-6-8v11z" fill="url(#mark)"/><circle cx="47" cy="17" r="2" fill="#f0ad57"/></svg>',
         media_type="image/svg+xml",
     )
 
@@ -182,11 +182,11 @@ def review_code(payload: CodeReviewRequest):
 
 @app.get("/api/assistant/status")
 def assistant_status():
-    return local_assistant.status()
+    return offline_helper.status()
 
 @app.post("/api/assistant/chat")
 def assistant_chat(payload: AssistantChatRequest):
-    answer = local_assistant.chat(payload.message)
+    answer = offline_helper.chat(payload.message)
     return {"model": "Morpheus offline helper", "answer": answer}
 
 @app.post("/api/scan-upload")

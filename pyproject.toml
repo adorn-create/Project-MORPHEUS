@@ -34,7 +34,7 @@ entrypoint = "morpheus.main:app"
 packages = ["morpheus"]
 
 [tool.setuptools.package-data]
-morpheus = ["templates/*.html"]
+morpheus = ["templates/*.html", "rules/*.json"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

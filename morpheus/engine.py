@@ -44,12 +44,14 @@ class DefenseEngine:
         processes = snapshot_processes(config.get("excluded_processes", []))
         self.last_process_count = len(processes)
         tree_enabled = config.get("process_tree_monitoring", True)
+        lineage_processes = set()
         if tree_enabled:
             self.latest_process_tree = process_tree_snapshot(processes)
             active_tree_edges = set()
             for edge in self.latest_process_tree["edges"]:
                 if not edge["review"]:
                     continue
+                lineage_processes.add(edge["child_pid"])
                 identity = (edge["parent_pid"], edge["child_pid"])
                 active_tree_edges.add(identity)
                 if identity in self._reported_tree_edges:
@@ -135,6 +137,7 @@ class DefenseEngine:
             try:
                 proc = psutil.Process(pid)
                 signals, exe = executable_signals(proc, item["connections"])
+                signals["suspicious_process_lineage"] = pid in lineage_processes
                 confidence, reasons = self.model.score(signals)
                 if confidence < 0.40:
                     continue

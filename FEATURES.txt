@@ -45,6 +45,13 @@ Device and process monitoring
   alert types; it is not a probability or malware verdict.
 - The process behavior scorer uses fixed, hand-set weights. It is fast and
   explainable, but it is not trained machine learning and is not a virus verdict.
+- Python source review uses Python's built-in AST for configured code patterns
+  and simple local dataflow checks. Other supported languages use validated,
+  JSON-configured pattern rules; they do not get AST/dataflow analysis.
+- Process and recent-event review scores use a bundled JSON threat matrix with
+  normalized weighted vectors and configured correlation scoring. These are
+  review priorities, not malware probabilities. Executable signature status is
+  not currently inspected.
 - The separate `Advancement.py` script supports opt-in, single-interface
   passive DNS/ARP review using a DNS/ARP-only packet filter. Packet storage is
   disabled; DNS names are hashed before alert logging. This script is not part

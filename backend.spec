@@ -5,6 +5,7 @@ from PyInstaller.utils.hooks import collect_all
 project_root = Path(SPECPATH)
 datas = [
     (str(project_root / "morpheus" / "templates"), "morpheus/templates"),
+    (str(project_root / "morpheus" / "rules"), "morpheus/rules"),
     (str(project_root / "config.json"), "."),
 ]
 binaries = []

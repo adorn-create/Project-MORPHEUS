@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "rules": [
+    {
+      "id": "hardcoded-credential",
+      "kind": "credential_assignment",
+      "title": "Potential hard-coded credential",
+      "severity": "high",
+      "extensions": [".py"],
+      "keywords": ["api_key", "access_token", "auth_token", "client_secret", "password", "passwd", "secret"],
+      "remediation": "Move credentials to a protected secret store or environment-based configuration, and rotate any real credential."
+    },
+    {
+      "id": "private-key-material",
+      "kind": "private_key_literal",
+      "title": "Private key material in source",
+      "severity": "critical",
+      "extensions": [".py"],
+      "markers": ["-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN EC PRIVATE KEY-----", "-----BEGIN OPENSSH PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----"],
+      "remediation": "Remove the key from source control, revoke or rotate it, and load it from a protected secret store."
+    },
+    {
+      "id": "dynamic-evaluation",
+      "kind": "dynamic_evaluation",
+      "title": "Dynamic code evaluation",
+      "severity": "high",
+      "extensions": [".py"],
+      "calls": ["eval", "exec"],
+      "remediation": "Avoid evaluating untrusted text as code; use a constrained parser or explicit operation mapping."
+    },
+    {
+      "id": "shell-command",
+      "kind": "shell_execution",
+      "title": "Subprocess uses a command shell",
+      "severity": "high",
+      "extensions": [".py"],
+      "calls": ["subprocess.run", "subprocess.Popen", "subprocess.call", "subprocess.check_call", "subprocess.check_output", "os.system"],
+      "remediation": "Pass an argument list with shell=False and validate each argument; avoid building commands from user input."
+    },
+    {
+      "id": "unsafe-deserialization",
+      "kind": "call",
+      "title": "Unsafe pickle deserialization",
+      "severity": "high",
+      "extensions": [".py"],
+      "calls": ["pickle.load", "pickle.loads", "pickle.Unpickler"],
+      "remediation": "Do not deserialize pickle data from untrusted sources; use a data-only format and validate its schema."
+    },
+    {
+      "id": "unsafe-yaml",
+      "kind": "unsafe_yaml",
+      "title": "Potentially unsafe YAML loading",
+      "severity": "high",
+      "extensions": [".py"],
+      "calls": ["yaml.load"],
+      "remediation": "Use yaml.safe_load for untrusted YAML, or explicitly configure a safe loader."
+    },
+    {
+      "id": "tls-verification-disabled",
+      "kind": "disabled_tls",
+      "title": "TLS certificate verification disabled",
+      "severity": "high",
+      "extensions": [".py"],
+      "false_keywords": ["verify", "check_hostname"],
+      "constant_values": ["ssl.CERT_NONE"],
+      "remediation": "Keep certificate and hostname verification enabled; fix the certificate chain instead of bypassing validation."
+    },
+    {
+      "id": "weak-hash",
+      "kind": "call",
+      "title": "Weak cryptographic hash",
+      "severity": "medium",
+      "extensions": [".py"],
+      "calls": ["hashlib.md5", "hashlib.sha1"],
+      "remediation": "Use SHA-256 or a modern password-hashing scheme as appropriate; MD5 and SHA-1 are not suitable for security decisions."
+    },
+    {
+      "id": "unsafe-html",
+      "kind": "regex",
+      "title": "Potentially unsafe HTML insertion",
+      "severity": "high",
+      "extensions": [".js", ".jsx", ".ts", ".tsx", ".vue"],
+      "pattern": "\\.innerHTML\\s*=",
+      "remediation": "Prefer textContent or a vetted HTML sanitizer when inserting data that may contain user-controlled content."
+    },
+    {
+      "id": "sql-interpolation",
+      "kind": "sql_sink",
+      "title": "Potential unparameterized SQL query",
+      "severity": "high",
+      "extensions": [".py"],
+      "calls": ["execute", "executemany"],
+      "taint_sources": ["input", "builtins.input", "os.getenv", "os.environ.get", "sys.argv", "request.args.get", "request.form.get", "request.values.get", "request.query_params.get", "request.get_json", "request.json"],
+      "remediation": "Use parameterized SQL queries instead of interpolating values into query strings."
+    },
+    {
+      "id": "cpp-unsafe-string-function",
+      "kind": "regex",
+      "title": "Unsafe C/C++ string function",
+      "severity": "high",
+      "extensions": [".c", ".cc", ".cpp", ".h", ".hpp"],
+      "pattern": "\\b(?:strcpy|strcat|sprintf|gets)\\s*\\(",
+      "remediation": "Use bounded operations and validate buffer sizes; prefer safer abstractions such as std::string where practical."
+    },
+    {
+      "id": "cpp-shell-execution",
+      "kind": "regex",
+      "title": "C/C++ shell execution",
+      "severity": "high",
+      "extensions": [".c", ".cc", ".cpp", ".h", ".hpp"],
+      "pattern": "\\b(?:system|popen|_popen)\\s*\\(",
+      "remediation": "Avoid passing constructed strings to a shell. Use a constrained process API with fixed executable and validated arguments."
+    },
+    {
+      "id": "sql-dynamic-concatenation",
+      "kind": "regex",
+      "title": "Potential dynamic SQL concatenation",
+      "severity": "high",
+      "extensions": [".sql"],
+      "pattern": "(?i)(?:\\bEXECUTE\\s+IMMEDIATE\\b[^\\n]*(?:\\|\\||\\+)\\s*[A-Za-z_]|\\bEXEC(?:UTE)?\\s*\\([^)]*(?:\\|\\||\\+)\\s*[A-Za-z_])",
+      "remediation": "Avoid constructing executable SQL with string concatenation; use parameterized statements and validated identifiers."
+    }
+  ]
+}

@@ -187,7 +187,7 @@ async function fetch(url, options = {}) {
       }],
       failures: [],
       truncated: false,
-      ruleset: 'Morpheus offline code rules v1',
+      ruleset: 'Morpheus offline AST and JSON rules v2',
     });
   }
   if (url === '/api/scan' && method === 'POST') return response({ detected: [], processes_checked: 42 });

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 class ConfigUpdate(BaseModel):
     automatic_high_confidence: bool | None = None
@@ -21,9 +21,13 @@ class ScanFolderRequest(BaseModel):
     path: str = Field(min_length=1, max_length=32768)
 
 class CodeReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     path: str = Field(min_length=1, max_length=32768)
 
 class AssistantChatRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     message: str = Field(min_length=1, max_length=2000)
 
 class QuarantineRequest(BaseModel):

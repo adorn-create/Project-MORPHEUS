@@ -12,6 +12,15 @@ let notificationsInitialized = false;
 const backendUrl = 'http://127.0.0.1:8080';
 const startupSettingsPath = path.join(app.getPath('userData'), 'settings.json');
 
+function appIcon() {
+  const iconPath = path.join(__dirname, 'tray-icon.ico');
+  const icon = nativeImage.createFromPath(iconPath);
+  if (icon.isEmpty()) {
+    throw new Error(`The Morpheus application icon is missing or invalid:\n${iconPath}`);
+  }
+  return icon;
+}
+
 function getStartupPreference() {
   try {
     const settings = JSON.parse(fs.readFileSync(startupSettingsPath, 'utf8'));
@@ -117,6 +126,7 @@ async function createWindow() {
     minWidth: 900,
     minHeight: 650,
     title: 'Morpheus Defense',
+    icon: appIcon(),
     autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,
@@ -278,9 +288,7 @@ app.whenReady().then(() => {
       await createWindow();
       notifyNewQuarantines();
       notificationTimer = setInterval(notifyNewQuarantines, 10000);
-      const trayIconPath = path.join(__dirname, 'tray-icon.ico');
-      const trayIcon = nativeImage.createFromPath(trayIconPath);
-      if (trayIcon.isEmpty()) throw new Error(`The Morpheus tray icon is missing or invalid:\n${trayIconPath}`);
+      const trayIcon = appIcon();
       tray = new Tray(trayIcon);
       tray.setToolTip('Morpheus Defense');
       tray.on('click', openWindow);

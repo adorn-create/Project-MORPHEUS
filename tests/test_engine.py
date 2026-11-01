@@ -35,7 +35,7 @@ def test_automatic_quarantine_is_reversible_and_does_not_block_network(tmp_path,
         "executable_signals",
         lambda proc, connections: (
             {
-                "unsigned_temp_executable": True,
+                "temporary_program_location": True,
                 "many_remote_connections": True,
                 "high_cpu": True,
                 "new_executable": True,

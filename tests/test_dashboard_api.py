@@ -54,7 +54,7 @@ def test_code_review_endpoint_returns_local_rule_findings(tmp_path):
     assert response.status_code == 200
     result = response.json()
     assert result["files_scanned"] == 1
-    assert result["ruleset"] == "Morpheus offline code rules v1"
+    assert result["ruleset"] == "Morpheus offline AST and JSON rules v2"
     assert result["findings"][0]["rule_id"] == "hardcoded-credential"
     assert result["findings"][0]["line"] == 1
     assert "example-secret-value" not in response.text
@@ -70,7 +70,7 @@ def test_code_review_endpoint_rejects_non_source_file(tmp_path):
     assert "Unsupported source-code file type" in response.json()["detail"]
 
 
-def test_code_review_endpoint_uses_offline_rules_even_with_legacy_model_field(tmp_path):
+def test_code_review_endpoint_rejects_external_model_configuration(tmp_path):
     source = tmp_path / "sample.py"
     source.write_text('eval(user_input)\n', encoding="utf-8")
     response = TestClient(main.app).post(
@@ -78,11 +78,7 @@ def test_code_review_endpoint_uses_offline_rules_even_with_legacy_model_field(tm
         json={"path": str(source), "model": "legacy-external-model"},
     )
 
-    assert response.status_code == 200
-    result = response.json()
-    assert result["findings"][0]["rule_id"] == "dynamic-evaluation"
-    assert result["findings"][0]["path"] == str(source)
-    assert result["ruleset"] == "Morpheus offline code rules v1"
+    assert response.status_code == 422
 
 
 def test_removed_defender_scan_endpoint_is_not_available(tmp_path):
@@ -118,6 +114,15 @@ def test_local_assistant_chat_requires_a_question():
     response = TestClient(main.app).post(
         "/api/assistant/chat",
         json={"message": ""},
+    )
+
+    assert response.status_code == 422
+
+
+def test_local_assistant_chat_rejects_external_model_fields():
+    response = TestClient(main.app).post(
+        "/api/assistant/chat",
+        json={"message": "Explain this alert", "model": "ollama-model"},
     )
 
     assert response.status_code == 422

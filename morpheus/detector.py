@@ -5,24 +5,14 @@ import math
 from collections import Counter
 from pathlib import Path
 
-class OwnBehaviorModel:
-    """Fast, fixed-weight local scorer; it is not trained and is not a malware signature."""
+from .threat_matrix import THREAT_MATRIX
 
-    weights = (
-        ("unsigned_temp_executable", 0.34),
-        ("many_remote_connections", 0.20),
-        ("high_cpu", 0.16),
-        ("new_executable", 0.12),
-        ("unexpected_sensitive_connection", 0.13),
-    )
+
+class OwnBehaviorModel:
+    """Fast, explainable scorer backed by the local JSON threat matrix."""
 
     def score(self, signals: dict) -> tuple[float, list[str]]:
-        score, reasons = 0.0, []
-        for signal, weight in self.weights:
-            if signals.get(signal):
-                score += weight
-                reasons.append(signal)
-        return min(score, 1.0), reasons
+        return THREAT_MATRIX.score_process(signals)
 
 def sha256(path: Path):
     digest = hashlib.sha256()
@@ -45,11 +35,26 @@ def executable_signals(proc, remote_connections=None, temp_exes=None):
     try:
         exe = Path(proc.exe())
         name = exe.name.lower()
-        temp = str(exe).lower().startswith((os.environ.get("TEMP", "\\temp").lower(), os.environ.get("TMP", "\\tmp").lower()))
+        executable_path = os.path.normcase(os.path.abspath(str(exe)))
+        temporary_roots = (
+            os.environ.get("TEMP"),
+            os.environ.get("TMP"),
+        )
+        temp = False
+        for root in temporary_roots:
+            if not root:
+                continue
+            normalized_root = os.path.normcase(os.path.abspath(os.path.expandvars(root)))
+            try:
+                if os.path.commonpath((executable_path, normalized_root)) == normalized_root:
+                    temp = True
+                    break
+            except ValueError:
+                continue
         connections = remote_connections or []
         cpu = proc.cpu_percent(interval=None)
         return {
-            "unsigned_temp_executable": temp and exe.suffix.lower() in (".exe", ".dll", ".scr", ".com"),
+            "temporary_program_location": temp and exe.suffix.lower() in (".exe", ".dll", ".scr", ".com"),
             "many_remote_connections": len(connections) >= 8,
             "high_cpu": cpu >= 70,
             "new_executable": str(exe) in (temp_exes or set()),

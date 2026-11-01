@@ -5,10 +5,11 @@
   "main": "desktop/main.js",
   "scripts": {
     "app": "electron .",
+    "build:icons": "electron scripts/generate-icons.cjs",
     "build:backend": "node scripts/build-backend.js",
     "build:firewall-worker": "node scripts/build-firewall-worker.js",
     "build:uninstall-helper": "node scripts/build-uninstall-helper.js",
-    "build:win": "npm run build:backend && npm run build:firewall-worker && npm run build:uninstall-helper && electron-builder --win nsis",
+    "build:win": "npm run build:icons && npm run build:backend && npm run build:firewall-worker && npm run build:uninstall-helper && electron-builder --win nsis",
     "test:ui": "node tests/test-dashboard-ui.cjs"
   },
   "devDependencies": {
@@ -50,7 +51,8 @@
     },
     "win": {
       "target": "nsis",
-      "requestedExecutionLevel": "asInvoker"
+      "requestedExecutionLevel": "asInvoker",
+      "icon": "desktop/tray-icon"
     },
     "nsis": {
       "perMachine": true,

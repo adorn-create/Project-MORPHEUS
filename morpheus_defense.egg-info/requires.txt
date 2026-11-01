@@ -10,3 +10,6 @@ pyinstaller<7,>=6.19
 
 [build:platform_system == "Windows"]
 pywin32>=310
+
+[network-monitoring]
+scapy<3,>=2.6
