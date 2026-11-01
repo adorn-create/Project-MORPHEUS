@@ -18,6 +18,10 @@ class FirewallStub:
         self.added.append(remote_ip)
         return True
 
+    def block_inbound_remote(self, remote_ip):
+        self.added.append(f"inbound:{remote_ip}")
+        return True
+
     def remove_rule_by_name(self, name):
         self.removed.append(name)
         return True
@@ -30,6 +34,9 @@ def test_worker_only_accepts_public_ipv4_and_morpheus_rule_names():
     added_ipv6 = handle_worker_request(
         {"operation": "add", "remote_ip": "2001:4860:4860::8888"}, firewall
     )
+    inbound_added = handle_worker_request(
+        {"operation": "add_inbound", "remote_ip": "1.1.1.1"}, firewall
+    )
     blocked_private = handle_worker_request({"operation": "add", "remote_ip": "127.0.0.1"}, firewall)
     removed = handle_worker_request(
         {"operation": "remove", "name": "Morpheus-Block-012345abcdef"}, firewall
@@ -38,14 +45,19 @@ def test_worker_only_accepts_public_ipv4_and_morpheus_rule_names():
         {"operation": "remove", "name": "Windows-Firewall-Rule"}, firewall
     )
     rejected_command = handle_worker_request({"operation": "execute", "command": "whoami"}, firewall)
+    rejected_inbound_private = handle_worker_request(
+        {"operation": "add_inbound", "remote_ip": "192.168.1.10"}, firewall
+    )
 
     assert added == {"ok": True}
     assert added_ipv6 == {"ok": True}
+    assert inbound_added == {"ok": True}
     assert blocked_private["ok"] is False
     assert removed == {"ok": True}
     assert rejected_remove["ok"] is False
     assert rejected_command["ok"] is False
-    assert firewall.added == ["1.1.1.1", "2001:4860:4860::8888"]
+    assert rejected_inbound_private["ok"] is False
+    assert firewall.added == ["1.1.1.1", "2001:4860:4860::8888", "inbound:1.1.1.1"]
     assert firewall.removed == ["Morpheus-Block-012345abcdef"]
 
 
@@ -81,6 +93,24 @@ def test_firewall_controller_creates_explicit_dual_stack_outbound_rules(monkeypa
     assert "profile=any" in commands[0]
     assert "protocol=any" in commands[0]
     assert "remoteip=2001:4860:4860::8888/128" in commands[0]
+
+
+def test_firewall_controller_creates_inbound_block_for_public_source(monkeypatch):
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr("morpheus.firewall.subprocess.run", run)
+    controller = FirewallController(use_worker=False)
+
+    assert controller.block_inbound_remote("1.2.3.4") is True
+    assert any("dir=in" == argument for argument in commands[0])
+    assert "action=block" in commands[0]
+    assert "protocol=any" in commands[0]
+    assert "remoteip=1.2.3.4/32" in commands[0]
+    assert any(argument.startswith("name=Morpheus-Scan-Block-") for argument in commands[0])
 
 
 def test_worker_uses_service_dispatcher_when_started_by_windows():

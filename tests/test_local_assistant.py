@@ -28,3 +28,11 @@ def test_offline_assistant_explains_common_topics_and_unknown_questions():
     assert "not a general-purpose AI" in assistant.chat(
         "Can you write a poem about space?"
     )
+
+
+def test_offline_assistant_explains_inbound_scan_protection():
+    answer = OfflineAssistant().chat("How does inbound scan blocking work?")
+
+    assert "dropped-packet logging" in answer
+    assert "10 or more distinct local ports" in answer
+    assert "Allow this IP" in answer

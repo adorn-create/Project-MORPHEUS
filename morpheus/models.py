@@ -9,6 +9,7 @@ class ConfigUpdate(BaseModel):
     powershell_log_monitoring: bool | None = None
     process_tree_monitoring: bool | None = None
     canary_monitoring: bool | None = None
+    automatic_inbound_scan_blocking: bool | None = None
     download_directory: str | None = Field(default=None, min_length=1, max_length=32768)
     download_confidence_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     high_confidence_threshold: float | None = Field(default=None, ge=0.0, le=1.0)

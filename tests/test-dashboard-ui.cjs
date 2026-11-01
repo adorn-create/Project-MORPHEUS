@@ -69,6 +69,8 @@ const ids = [
   'dnsEntropyMonitoring', 'powershellLogMonitoring', 'processTreeMonitoring',
   'canaryMonitoring', 'dnsMonitorStatus', 'powershellMonitorStatus',
   'canaryMonitorStatus', 'processTree', 'riskLevel', 'riskDetails',
+  'startupReviewButton', 'startupReviewResults',
+  'inboundScanBlocking', 'inboundScanStatus',
   'assistantStatus', 'assistantConversation',
   'assistantForm', 'assistantQuestion', 'sendAssistantQuestion',
   'downloadDirectoryPath', 'browseDownloadFolderButton',
@@ -100,6 +102,8 @@ let config = {
   powershell_log_monitoring: false,
   process_tree_monitoring: true,
   canary_monitoring: false,
+  automatic_inbound_scan_blocking: false,
+  inbound_scan_allowlist: [],
   high_confidence_threshold: 0.95,
 };
 let selectedFolder = null;
@@ -121,6 +125,21 @@ async function fetch(url, options = {}) {
   }
   if (url === '/api/process-tree') {
     return response(processTreeData);
+  }
+  if (url === '/api/persistence/startup') {
+    return response({
+      available: true,
+      entries: [{
+        scope: 'current_user',
+        location: 'current_user\\Software\\Run',
+        name: 'Example',
+        command: 'example.exe',
+        command_truncated: false,
+      }],
+      failures: [],
+      truncated: false,
+      message: 'Read-only inventory.',
+    });
   }
   if (url === '/api/risk') {
     return response({
@@ -154,7 +173,12 @@ async function fetch(url, options = {}) {
   if (url === '/api/status') {
     return response({
       event_count: 0,
-      monitoring: { running: true, poll_interval_seconds: 5, downloads_enabled: false },
+      monitoring: {
+        running: true,
+        poll_interval_seconds: 5,
+        downloads_enabled: false,
+        inbound_scan_protection: { enabled: false, available: true, message: 'Off.' },
+      },
       tool_watch: { catalog_entries: 70 },
       expansion: {
         dns: { enabled: false, available: true, message: 'Off.' },
@@ -206,6 +230,14 @@ async function fetch(url, options = {}) {
   if (url === '/api/config' && method === 'POST') {
     config = { ...config, ...JSON.parse(options.body) };
     return response(config);
+  }
+  if (url === '/api/firewall/allow' && method === 'POST') {
+    const body = JSON.parse(options.body);
+    config = {
+      ...config,
+      inbound_scan_allowlist: [...new Set([...(config.inbound_scan_allowlist || []), body.remote_ip])],
+    };
+    return response({ allowed: true, remote_ip: body.remote_ip });
   }
   if (url === '/api/firewall' && method === 'POST') return response({ added: true });
   if (url.startsWith('/api/firewall/') && method === 'DELETE') return response({ removed: true });
@@ -420,7 +452,31 @@ async function main() {
   elements.get('canaryMonitoring').checked = true;
   await elements.get('canaryMonitoring').dispatch('change');
   assert.ok(calls.some(call => call.url === '/api/config' && JSON.parse(call.options.body).canary_monitoring === true));
+  elements.get('inboundScanBlocking').checked = true;
+  await elements.get('inboundScanBlocking').dispatch('change');
+  assert.ok(calls.some(call =>
+    call.url === '/api/config'
+    && JSON.parse(call.options.body).automatic_inbound_scan_blocking === true
+  ));
   assert.equal(elements.get('riskLevel').textContent, 'No recent warning signs');
+  await elements.get('startupReviewButton').dispatch('click');
+  assert.ok(calls.some(call => call.url === '/api/persistence/startup'));
+  assert.equal(elements.get('startupReviewResults').children.length, 1);
+  eventsData = [{
+    timestamp: new Date().toISOString(),
+    kind: 'inbound_port_scan',
+    severity: 'high',
+    source: '1.2.3.4',
+    target: '192.168.1.25',
+    evidence: 'Windows Firewall dropped probes across ports.',
+    response: 'blocked_inbound:Morpheus-Scan-Block-012345abcdef',
+  }];
+  await elements.get('runScanButton').dispatch('click');
+  const alertRow = elements.get('eventsBody').children[0];
+  const allowButton = alertRow.lastElementChild.children.find(item => item.textContent === 'Allow this IP');
+  assert.ok(allowButton, 'blocked scan alert offers an owner allow action');
+  await allowButton.dispatch('click');
+  assert.ok(calls.some(call => call.url === '/api/firewall/allow' && call.method === 'POST'));
 }
 
 main().then(() => {

@@ -1,9 +1,10 @@
+import hashlib
 import ipaddress
 import re
 
 
 WORKER_PIPE = r"\\.\pipe\MorpheusFirewallWorker"
-RULE_NAME_PATTERN = re.compile(r"^Morpheus-Block-[0-9a-f]{12}$")
+RULE_NAME_PATTERN = re.compile(r"^Morpheus-(?:Block|Scan-Block)-[0-9a-f]{12}$")
 
 
 def parse_public_ip(value: str):
@@ -27,6 +28,14 @@ def parse_public_ipv4(value: str):
     return address
 
 
+def scan_block_rule_name(remote_ip: str) -> str:
+    address = parse_public_ip(remote_ip)
+    if address is None:
+        raise ValueError("Only globally routable IPv4 or IPv6 addresses can be blocked.")
+    suffix = hashlib.sha256(str(address).encode("ascii")).hexdigest()[:12]
+    return f"Morpheus-Scan-Block-{suffix}"
+
+
 def handle_worker_request(request: dict, firewall) -> dict:
     if not isinstance(request, dict):
         return {"ok": False, "error": "Request must be a JSON object."}
@@ -38,6 +47,15 @@ def handle_worker_request(request: dict, firewall) -> dict:
             return {"ok": False, "error": "Only globally routable IPv4 or IPv6 addresses can be blocked."}
         try:
             return {"ok": bool(firewall.block_remote(str(address)))}
+        except OSError as exc:
+            return {"ok": False, "error": str(exc)}
+
+    if operation == "add_inbound":
+        address = parse_public_ip(request.get("remote_ip", ""))
+        if address is None:
+            return {"ok": False, "error": "Only globally routable IPv4 or IPv6 addresses can be blocked."}
+        try:
+            return {"ok": bool(firewall.block_inbound_remote(str(address)))}
         except OSError as exc:
             return {"ok": False, "error": str(exc)}
 

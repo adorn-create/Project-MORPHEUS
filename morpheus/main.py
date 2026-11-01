@@ -18,13 +18,15 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from .engine import DefenseEngine
-from .downloads import DownloadMonitor
+from .downloads import MAX_MONITORED_FILES, DownloadMonitor
 from .code_review import CodeReview
 from .local_assistant import OfflineAssistant
 from .scanner import ProtectedSystemPathError, StaticScanner
 from .sysmon import SysmonStatus
 from .timeline import AttackTimeline
 from .quarantine import QuarantineManager
+from .persistence import inspect_autostart_registry
+from .network_guard import WindowsFirewallLogMonitor
 from .models import (
     CodeReviewRequest,
     AssistantChatRequest,
@@ -36,7 +38,7 @@ from .models import (
     SettingsPasswordRequest,
 )
 from .firewall import FirewallWorkerError
-from .firewall_worker import parse_public_ip
+from .firewall_worker import parse_public_ip, scan_block_rule_name
 from .tool_catalog import TOOL_CATALOG
 from .expansion import DnsEntropyMonitor, PowerShellLogMonitor
 from .canary import CanaryMonitor
@@ -62,8 +64,9 @@ quarantine = QuarantineManager(DATA_ROOT / "quarantine")
 dns_monitor = DnsEntropyMonitor()
 powershell_monitor = PowerShellLogMonitor()
 canary_monitor = CanaryMonitor(DATA_ROOT / "canaries")
+inbound_scan_monitor = WindowsFirewallLogMonitor()
 templates = Jinja2Templates(directory=str(ROOT / "morpheus" / "templates"))
-app = FastAPI(title="Morpheus Defense", version="0.1.0")
+app = FastAPI(title="Morpheus Defense", version="0.1.3")
 worker_stop = threading.Event()
 worker_thread: threading.Thread | None = None
 scan_lock = threading.Lock()
@@ -111,6 +114,10 @@ def status():
             "last_error": last_scan_error,
             "downloads_enabled": config.get("download_monitoring", False),
             "download_directory": config.get("download_directory") or str(Path.home() / "Downloads"),
+            "monitored_file_limit": MAX_MONITORED_FILES,
+            "inbound_scan_protection": inbound_scan_monitor.status(
+                bool(config.get("automatic_inbound_scan_blocking", False))
+            ),
         },
         "expansion": {
             "dns": dns_monitor.status(bool(config.get("dns_entropy_monitoring", False))),
@@ -137,6 +144,10 @@ def attack_timeline(limit: int = 200):
 @app.get("/api/process-tree")
 def process_tree():
     return engine.latest_process_tree
+
+@app.get("/api/persistence/startup")
+def startup_persistence():
+    return inspect_autostart_registry()
 
 @app.get("/api/risk")
 def risk_summary():
@@ -245,6 +256,54 @@ def add_firewall_rule(
     if not added:
         raise HTTPException(status_code=503, detail="The firewall worker could not add the requested rule.")
     return {"added": True}
+
+@app.post("/api/firewall/allow")
+def allow_inbound_scan_source(
+    payload: FirewallRuleRequest,
+    x_morpheus_settings_password: str | None = Header(default=None),
+):
+    require_settings_password(x_morpheus_settings_password)
+    address = parse_public_ip(payload.remote_ip)
+    if address is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Only globally routable IPv4 or IPv6 addresses can be allowlisted.",
+        )
+    normalized = str(address)
+    config = engine.config()
+    allowlist = {
+        str(parsed)
+        for value in config.get("inbound_scan_allowlist", [])
+        if (parsed := parse_public_ip(value)) is not None
+    }
+    if normalized not in allowlist:
+        rule_name = scan_block_rule_name(normalized)
+        try:
+            rules = engine.firewall.list_morpheus_rules()
+            if any(rule.get("name") == rule_name for rule in rules):
+                if not engine.firewall.remove_rule_by_name(rule_name):
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Could not remove the inbound block; the IP was not allowlisted.",
+                    )
+        except FirewallWorkerError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        allowlist.add(normalized)
+        config["inbound_scan_allowlist"] = sorted(allowlist)
+        CONFIG_PATH.write_text(json.dumps(config, indent=2), encoding="utf-8")
+        event = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "kind": "inbound_scan_allowlisted",
+            "severity": "low",
+            "source": "Owner",
+            "target": normalized,
+            "confidence": None,
+            "evidence": "The owner chose to allow this public source IP.",
+            "response": "owner_allowlisted_no_block",
+        }
+        engine.db.add(event)
+        engine.journal.append(event)
+    return {"allowed": True, "remote_ip": normalized}
 
 @app.delete("/api/firewall/{name}")
 def remove_firewall_rule(
@@ -363,6 +422,12 @@ def worker():
         try:
             evaluate_processes()
             download_monitor.scan_new_downloads(engine.config())
+            inbound_scan_monitor.poll(
+                engine.config(),
+                engine.firewall,
+                engine.db,
+                engine.journal,
+            )
         except Exception:
             LOGGER.exception("Background security monitoring failed")
         try:

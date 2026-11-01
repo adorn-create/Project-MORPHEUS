@@ -8,6 +8,7 @@
   "powershell_log_monitoring": false,
   "process_tree_monitoring": true,
   "canary_monitoring": false,
+  "automatic_inbound_scan_blocking": false,
   "download_confidence_threshold": 0.6,
   "high_confidence_threshold": 0.95,
   "protected_roots": [],

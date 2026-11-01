@@ -208,7 +208,7 @@
     <section class="grid" aria-label="Security summary">
       <article class="card"><div class="card-label">Alerts saved</div><div class="card-value" id="eventCount">{{ events|length }}</div></article>
       <article class="card"><div class="card-label">Automatic file holding</div><div class="card-value small" id="quarantineState">{{ 'ON' if config.get('automatic_quarantine', false) else 'OFF' }}</div></article>
-      <article class="card"><div class="card-label">Background checks</div><div class="card-value small" id="monitoringState">Checking</div><div class="card-detail" id="lastScanTime">Waiting for first check</div><div class="card-detail" id="downloadMonitorState">Download checks: OFF</div></article>
+      <article class="card"><div class="card-label">Background checks</div><div class="card-value small" id="monitoringState">Checking</div><div class="card-detail" id="lastScanTime">Waiting for first check</div><div class="card-detail" id="downloadMonitorState">Folder file checks: OFF</div></article>
       <article class="card"><div class="card-label">Known security apps watched</div><div class="card-value" id="toolCatalogCount">Checking</div><div class="card-detail">Checks names only; list is not complete</div></article>
       <article class="card"><div class="card-label">Recent alerts to review</div><div class="card-value small" id="riskLevel">Checking</div><div class="card-detail" id="riskDetails">A reminder based on recent alerts; not a diagnosis.</div></article>
     </section>
@@ -235,25 +235,25 @@
     <section class="section tools-grid">
       <div class="panel" aria-labelledby="fileScanTitle">
         <div class="section-heading"><h2 id="fileScanTitle">Check files and folders</h2></div>
-        <p class="subtle">Checks files from beginning to end for a few known patterns and creates a file fingerprint. This is not a full antivirus scan and may miss malware. A clean result does not guarantee a file is safe.</p>
+        <p class="subtle">Checks files offline for a small built-in exact test signature and heuristic warning patterns, and creates a file fingerprint. The test signature confirms only that a known antivirus test string is present; it is not a malware verdict. This is not a full antivirus scan.</p>
         <div class="setting-toggle">
           <input id="automaticQuarantine" type="checkbox" {% if config.get('automatic_quarantine', false) %}checked{% endif %}>
           <label for="automaticQuarantine">Automatically move strongly flagged running apps into a holding area</label>
         </div>
         <div class="setting-toggle">
           <input id="downloadMonitoring" type="checkbox" {% if config.get('download_monitoring', false) %}checked{% endif %}>
-          <label for="downloadMonitoring">Check new files added to the selected downloads folder</label>
+          <label for="downloadMonitoring">Check new or changed supported files in the selected folder</label>
         </div>
         <div class="field-row">
-          <input id="downloadDirectoryPath" aria-label="Download monitoring folder" readonly value="{{ config.get('download_directory') or '' }}" placeholder="Default: your user's Downloads folder">
+          <input id="downloadDirectoryPath" aria-label="Monitored folder" readonly value="{{ config.get('download_directory') or '' }}" placeholder="Default: your user's Downloads folder">
           <button id="browseDownloadFolderButton" type="button">Choose monitored folder</button>
         </div>
-        <p class="password-state">Choose a folder to watch. Only new files are checked after downloading; older files are not checked automatically.</p>
+        <p class="password-state">Checks run during background polling (5 seconds by default), including subfolders. Existing files are used as a baseline; only new or changed supported files are scanned. Up to 5,000 supported files are tracked per check, and Windows/protected paths are skipped.</p>
         <div class="setting-toggle">
           <input id="quarantineDownloads" type="checkbox" {% if config.get('automatic_quarantine_downloads', false) %}checked{% endif %}>
-          <label for="quarantineDownloads">Automatically put downloads with warning signs into a holding area</label>
+          <label for="quarantineDownloads">Automatically put files with strong heuristic warning signs into a holding area</label>
         </div>
-        <p class="subtle">You can restore a held file later. Morpheus does not check website reputations or catch every download.</p>
+        <p class="subtle">Automatic holding is off by default. Exact antivirus-test-string matches are review-only and are never quarantined. You can restore a held file later. Morpheus does not check website reputations or catch every threat.</p>
         <div class="field-row">
           <input id="scanPath" aria-label="File or folder path to scan" placeholder="Choose a file or folder, or enter its path">
           <button id="browseFileButton" type="button">Browse file</button>
@@ -317,6 +317,12 @@
         <p class="subtle">This list shows app-to-app launches. A highlighted launch may be normal; check whether you expected it.</p>
         <div class="tree-list" id="processTree" role="status" aria-live="polite">Waiting for the first process snapshot...</div>
       </div>
+      <div class="panel" aria-labelledby="startupReviewTitle">
+        <div class="section-heading"><h2 id="startupReviewTitle">Review startup entries</h2></div>
+        <p class="subtle">Read-only inventory of common Windows Run and RunOnce registry entries. Morpheus will not disable or change them. Unknown entries are not automatically suspicious.</p>
+        <button id="startupReviewButton" type="button">Review startup entries</button>
+        <div class="tree-list" id="startupReviewResults" role="status" aria-live="polite">Nothing has been inspected yet.</div>
+      </div>
     </section>
 
     <section class="section" aria-labelledby="timelineTitle">
@@ -327,7 +333,13 @@
     <section class="section tools-grid" aria-label="Firewall and owner controls">
       <div class="panel" aria-labelledby="firewallTitle">
         <div class="section-heading"><h2 id="firewallTitle">Block an internet address (advanced)</h2></div>
-        <p class="subtle">This stops this computer from connecting out to the address you enter. It does not block or control someone else's computer. A wrong address can interrupt websites or apps. Only use this if you know what the address is.</p>
+        <p class="subtle">Manual rules stop this computer from connecting out to the address you enter. They do not block or control someone else's computer. A wrong address can interrupt websites or apps. Only use this if you know what the address is.</p>
+        <div class="setting-toggle">
+          <input id="inboundScanBlocking" type="checkbox" {% if config.get('automatic_inbound_scan_blocking', false) %}checked{% endif %}>
+          <label for="inboundScanBlocking">Monitor Windows Firewall drops and automatically block public IPs probing many ports</label>
+        </div>
+        <p class="password-state" id="inboundScanStatus" role="status">Inbound scan protection status: checking...</p>
+        <p class="subtle">Requires Windows Firewall dropped-packet logging to already be enabled (Windows Defender Firewall with Advanced Security → Properties → Logging → Customize → Log dropped packets). Morpheus will not change Windows logging settings. It detects only logged inbound drops to this PC and may miss scans; ten distinct ports within 60 seconds is a heuristic, not proof of an attack. Enabling this adds inbound firewall blocks for detected public IPs. Use “Allow this IP” in the alert to remove the block and prevent future automatic blocks.</p>
         <div class="worker-state" id="firewallWorkerState" role="status"><span class="dot"></span><span>Checking privileged worker...</span></div>
         <button class="firewall-worker-button" id="startFirewallWorkerButton" type="button" hidden>Start firewall helper (Windows approval)</button>
         <p class="result" id="firewallActionStatus" role="status" aria-live="polite"></p>
@@ -376,12 +388,14 @@ const downloadMonitoring = document.getElementById('downloadMonitoring');
 const downloadDirectoryPath = document.getElementById('downloadDirectoryPath');
 const browseDownloadFolderButton = document.getElementById('browseDownloadFolderButton');
 const quarantineDownloads = document.getElementById('quarantineDownloads');
+const inboundScanBlocking = document.getElementById('inboundScanBlocking');
 const dnsEntropyMonitoring = document.getElementById('dnsEntropyMonitoring');
 const powershellLogMonitoring = document.getElementById('powershellLogMonitoring');
 const processTreeMonitoring = document.getElementById('processTreeMonitoring');
 const canaryMonitoring = document.getElementById('canaryMonitoring');
 const assistantStatus = document.getElementById('assistantStatus');
 const reviewCodeButton = document.getElementById('reviewCodeButton');
+const startupReviewButton = document.getElementById('startupReviewButton');
 const assistantConversation = document.getElementById('assistantConversation');
 const assistantForm = document.getElementById('assistantForm');
 const assistantQuestion = document.getElementById('assistantQuestion');
@@ -448,6 +462,7 @@ function readableEvidence(value) {
     high_entropy: 'The file looks compressed or encrypted. This is common in photos and archives and is not suspicious by itself.',
     implausibly_small_native_file: 'This program file is unusually small. It may be incomplete or unusual, but this alone does not prove harm.',
     suspicious_native_marker: 'The file contains text patterns sometimes associated with harmful software. Legitimate tools may contain them too.',
+    known_test_signature: 'The file contains the harmless EICAR antivirus test string. This is a scanner test, not a virus.',
   };
   let items = value;
   if (typeof value === 'string') {
@@ -507,10 +522,25 @@ function friendlyEvidence(value, kind) {
     return readableEvidence(evidence);
   }
   if (kind === 'download_suspicious') {
-    return 'A new download matched a few local warning signs. This does not prove it is harmful; do not open it unless you trust where it came from.';
+    return 'A new or changed file matched local heuristic warning signs. This does not prove it is harmful; review it before opening.';
+  }
+  if (kind === 'download_signature_test') {
+    return 'Morpheus found the harmless EICAR antivirus test string. This confirms only that the local test signature matched; no file was quarantined.';
+  }
+  if (kind === 'bulk_file_change_review') {
+    return 'Many files in the monitored folder changed quickly and several looked highly compressed or encrypted. This can happen during legitimate work; Morpheus did not stop or change any files.';
+  }
+  if (kind === 'folder_monitor_limit') {
+    return 'This folder contains more supported files than Morpheus tracks per check. Monitoring is incomplete until you choose a smaller folder.';
+  }
+  if (kind === 'inbound_port_scan') {
+    return 'Windows Firewall logged dropped probes from this public IP across many ports. This can be a scan, but logs alone cannot identify Nmap or prove malicious intent.';
+  }
+  if (kind === 'inbound_scan_allowlisted') {
+    return 'You chose to allow this public IP. Morpheus will not automatically block it again.';
   }
   if (kind === 'download_scan_error') {
-    return 'Morpheus could not check a new download. Check the file manually with Windows Security.';
+    return 'Morpheus could not check a new or changed file. Review the error and use Windows Security for an antivirus scan.';
   }
   if (Array.isArray(evidence)) return readableEvidence(evidence);
   if (evidence && typeof evidence === 'object') {
@@ -534,6 +564,11 @@ function friendlyResponse(value) {
   if (value === 'review_required_manual_approval') return 'No changes were made. Please review this alert yourself.';
   if (String(value).startsWith('quarantined:')) return 'Moved to the holding area. Review it before restoring.';
   if (value === 'flagged_pending_review') return 'Flagged for you to review. Nothing was removed.';
+  if (value === 'test_signature_detected_review_only') return 'Harmless antivirus test string found; no file was changed.';
+  if (value === 'folder_monitor_limit') return 'Monitoring is limited; choose a smaller folder for complete coverage.';
+  if (String(value).startsWith('blocked_inbound:')) return 'Automatically blocked inbound traffic from this IP by Windows Firewall.';
+  if (value === 'owner_allowlisted_no_block') return 'Owner allowed this IP; Morpheus will not automatically block it.';
+  if (value === 'scan_detected_firewall_block_failed') return 'A possible scan was detected, but the firewall block failed. Review the firewall service status.';
   if (String(value).startsWith('quarantine_failed:')) return 'Flagged, but Morpheus could not move it to the holding area.';
   if (String(value).startsWith('download_scan_skipped:')) return 'This file was skipped and was not checked.';
   if (String(value).startsWith('download_scan_failed:')) return 'Morpheus could not check this file.';
@@ -564,6 +599,13 @@ function renderEvents(events) {
     addCell(row, event.target);
     addCell(row, friendlyEvidence(event.evidence, event.kind));
     addCell(row, friendlyResponse(event.response));
+    if (event.kind === 'inbound_port_scan' && String(event.response || '').startsWith('blocked_inbound:')) {
+      const allow = document.createElement('button');
+      allow.type = 'button';
+      allow.textContent = 'Allow this IP';
+      allow.addEventListener('click', () => allowInboundScanSource(event.source, allow));
+      row.lastElementChild.appendChild(allow);
+    }
     body.appendChild(row);
   }
 }
@@ -721,6 +763,7 @@ async function refreshDashboard(includeFirewall = false) {
   if (!status.monitoring || typeof status.monitoring.running !== 'boolean') {
     throw new Error('The status response is missing background monitoring information.');
   }
+
   if (!status.tool_watch || typeof status.tool_watch.catalog_entries !== 'number') {
     throw new Error('The status response is missing tool-watch coverage information.');
   }
@@ -749,7 +792,10 @@ async function refreshDashboard(includeFirewall = false) {
   document.getElementById('lastScanTime').textContent = status.monitoring.last_scan_at
     ? `Last scan: ${new Date(status.monitoring.last_scan_at).toLocaleTimeString()}`
     : status.monitoring.last_error ? 'Last background scan failed' : 'Waiting for first scan';
-  document.getElementById('downloadMonitorState').textContent = status.monitoring.downloads_enabled ? 'Download checks: On' : 'Download checks: Off';
+  document.getElementById('downloadMonitorState').textContent = status.monitoring.downloads_enabled ? 'Folder file checks: On' : 'Folder file checks: Off';
+  document.getElementById('inboundScanStatus').textContent =
+    status.monitoring.inbound_scan_protection?.message || 'Inbound scan protection status unavailable.';
+  inboundScanBlocking.checked = Boolean(status.config.automatic_inbound_scan_blocking);
   downloadDirectoryPath.value = status.monitoring.download_directory || '';
   document.getElementById('quarantineState').textContent = status.config.automatic_quarantine ? 'On' : 'Off';
   document.getElementById('automaticQuarantine').checked = Boolean(status.config.automatic_quarantine);
@@ -775,6 +821,88 @@ async function refreshDashboard(includeFirewall = false) {
   }
   if (scanResult.textContent.includes('Cannot reach the local service.')) {
     scanResult.textContent = 'Local service reconnected. Retry the file or folder scan.';
+  }
+}
+
+async function reviewStartupEntries() {
+  startupReviewButton.disabled = true;
+  const results = document.getElementById('startupReviewResults');
+  results.textContent = 'Reading common Windows startup registry locations. No settings will be changed...';
+  try {
+    const report = await requestJson('/api/persistence/startup');
+    if (!report.available) {
+      results.textContent = report.message || 'Startup registry review is unavailable.';
+      return;
+    }
+    const table = document.createElement('table');
+    const head = document.createElement('thead');
+    const header = document.createElement('tr');
+    for (const label of ['Scope', 'Entry', 'Command', 'Location']) {
+      const cell = document.createElement('th');
+      cell.textContent = label;
+      header.appendChild(cell);
+    }
+    head.appendChild(header);
+    const body = document.createElement('tbody');
+    for (const entry of report.entries) {
+      const row = document.createElement('tr');
+      addCell(row, entry.scope);
+      addCell(row, entry.name);
+      addCell(row, `${entry.command}${entry.command_truncated ? ' [truncated]' : ''}`);
+      addCell(row, entry.location);
+      body.appendChild(row);
+    }
+    for (const failure of report.failures) {
+      const row = document.createElement('tr');
+      addCell(row, 'Could not read');
+      addCell(row, failure.location);
+      addCell(row, failure.message);
+      addCell(row, '-');
+      body.appendChild(row);
+    }
+    if (!report.entries.length && !report.failures.length) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 4;
+      cell.textContent = 'No entries were found in the inspected locations.';
+      row.appendChild(cell);
+      body.appendChild(row);
+    }
+    table.append(head, body);
+    results.replaceChildren(table);
+    const limitMessage = report.truncated ? ' The report was limited to the first 500 entries.' : '';
+    results.setAttribute('aria-label', `${report.message}${limitMessage}`);
+  } catch (error) {
+    results.textContent = `Startup review failed: ${error.message}`;
+  } finally {
+    startupReviewButton.disabled = false;
+  }
+}
+
+startupReviewButton.addEventListener('click', reviewStartupEntries);
+
+async function allowInboundScanSource(remoteIp, button) {
+  if (!window.confirm(`Remove Morpheus's inbound firewall block for ${remoteIp} and allow it in future scan checks?`)) return;
+  button.disabled = true;
+  try {
+    const settingsPassword = await requestSettingsPassword();
+    await requestJson('/api/firewall/allow', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(settingsPassword ? { 'X-Morpheus-Settings-Password': settingsPassword } : {}),
+      },
+      body: JSON.stringify({ remote_ip: remoteIp }),
+    });
+    document.getElementById('ownerPasswordInput').value = '';
+    document.getElementById('firewallActionStatus').textContent =
+      `${remoteIp} is allowed. The Morpheus inbound block was removed.`;
+    button.textContent = 'IP allowed';
+    await refreshDashboard(true);
+  } catch (error) {
+    button.disabled = false;
+    document.getElementById('firewallActionStatus').textContent =
+      `Could not allow ${remoteIp}: ${error.message}`;
   }
 }
 
@@ -909,8 +1037,9 @@ async function analyzeFilePath() {
     });
     showFolderResults([result], []);
     const noted = Array.isArray(result.reasons) ? result.reasons.length : 0;
+    const signatureCount = Array.isArray(result.signature_matches) ? result.signature_matches.length : 0;
     scanResult.textContent = noted
-      ? `Found ${noted} warning sign${noted === 1 ? '' : 's'}. This does not prove the file is harmful; see the explanation below.`
+      ? `Found ${noted} local warning sign${noted === 1 ? '' : 's'}${signatureCount ? `, including ${signatureCount} exact test-signature match${signatureCount === 1 ? '' : 'es'}` : ''}. This does not prove the file is harmful; see the explanation below.`
       : 'No known warning signs were found. This does not guarantee the file is safe.';
   } catch (error) {
     scanResult.textContent = `Analysis failed: ${error.message}`;
@@ -1057,12 +1186,16 @@ async function updateConfigFromToggle(toggle, change, errorLabel) {
     document.getElementById('quarantineState').textContent = config.automatic_quarantine ? 'On' : 'Off';
     downloadMonitoring.checked = Boolean(config.download_monitoring);
     quarantineDownloads.checked = Boolean(config.automatic_quarantine_downloads);
-    document.getElementById('downloadMonitorState').textContent = config.download_monitoring ? 'Downloads: ON' : 'Downloads: OFF';
+    document.getElementById('downloadMonitorState').textContent = config.download_monitoring ? 'Folder file checks: ON' : 'Folder file checks: OFF';
     downloadDirectoryPath.value = config.download_directory || downloadDirectoryPath.value;
     dnsEntropyMonitoring.checked = Boolean(config.dns_entropy_monitoring);
     powershellLogMonitoring.checked = Boolean(config.powershell_log_monitoring);
     processTreeMonitoring.checked = config.process_tree_monitoring !== false;
     canaryMonitoring.checked = Boolean(config.canary_monitoring);
+    inboundScanBlocking.checked = Boolean(config.automatic_inbound_scan_blocking);
+    document.getElementById('inboundScanStatus').textContent = config.automatic_inbound_scan_blocking
+      ? 'Enabled. Requires new dropped-packet entries in the Windows Firewall log.'
+      : 'Off. No inbound firewall log is being monitored.';
     document.getElementById('dnsMonitorStatus').textContent = config.dns_entropy_monitoring
       ? 'Enabled. New DNS cache entries are reviewed locally.'
       : 'Off. No DNS names are being checked.';
@@ -1261,7 +1394,7 @@ document.getElementById('automaticQuarantine').addEventListener('change', event 
   updateConfigFromToggle(event.target, enabled => ({ automatic_quarantine: enabled }), 'Could not update process quarantine setting');
 });
 downloadMonitoring.addEventListener('change', event => {
-  if (event.target.checked && !window.confirm('Morpheus will monitor new executable and script files in your Windows Downloads folder. Files stay on this device. If enabled, suspicious files may be moved to quarantine and can be restored. Continue?')) {
+  if (event.target.checked && !window.confirm('Morpheus will periodically check new or changed supported files in the selected folder and its subfolders. Existing files are used as a baseline. Files stay on this device; this is not full antivirus protection. Continue?')) {
     event.target.checked = false;
     return;
   }
@@ -1286,7 +1419,7 @@ async function chooseDownloadFolder() {
       body: JSON.stringify({ download_directory: path }),
     });
     downloadDirectoryPath.value = config.download_directory || path;
-    status.textContent = `Download monitoring folder saved: ${downloadDirectoryPath.value}. Newly added supported files will be checked when monitoring is on.`;
+    status.textContent = `Monitored folder saved: ${downloadDirectoryPath.value}. New or changed supported files will be checked when monitoring is on.`;
     document.getElementById('ownerPasswordInput').value = '';
   } catch (error) {
     status.textContent = `Could not set download monitoring folder: ${error.message}`;
@@ -1323,8 +1456,24 @@ canaryMonitoring.addEventListener('change', event => {
   }
   updateConfigFromToggle(event.target, enabled => ({ canary_monitoring: enabled }), 'Could not update canary monitoring');
 });
+inboundScanBlocking.addEventListener('change', event => {
+  if (event.target.checked && !window.confirm(
+    'Morpheus will read new Windows Firewall dropped-packet log entries. ' +
+    'If it sees probes to 10 or more distinct ports within 60 seconds, it will add an inbound block for that public IP. ' +
+    'This requires dropped-packet logging to already be enabled; Morpheus will not change Windows settings. ' +
+    'False positives can block legitimate inbound connections. You can allow an IP from its alert. Continue?'
+  )) {
+    event.target.checked = false;
+    return;
+  }
+  updateConfigFromToggle(
+    event.target,
+    enabled => ({ automatic_inbound_scan_blocking: enabled }),
+    'Could not update inbound scan protection',
+  );
+});
 quarantineDownloads.addEventListener('change', event => {
-  if (event.target.checked && !window.confirm('Morpheus will automatically move new Downloads files that exceed its local heuristic threshold into quarantine. False positives are possible; quarantined files can be restored. Continue?')) {
+  if (event.target.checked && !window.confirm('Morpheus will automatically move new or changed files that exceed its local heuristic threshold into quarantine. False positives are possible. The EICAR test signature is never quarantined. Quarantined files can be restored. Continue?')) {
     event.target.checked = false;
     return;
   }

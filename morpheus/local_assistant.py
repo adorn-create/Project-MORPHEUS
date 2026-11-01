@@ -23,10 +23,15 @@ _INTENTS = (
         "it. Morpheus does not prove a file is harmful.",
     ),
     (
-        ("firewall", "block address", "block ip", "internet address"),
-        "The firewall control can block this computer from connecting out to an "
-        "address you enter. It does not control another computer. A wrong address "
-        "can interrupt apps or websites, so only block an address you understand.",
+        ("firewall", "block address", "block ip", "internet address", "inbound scan", "port scan", "nmap"),
+        "Manual firewall rules block this computer from connecting out to an address. "
+        "It does not control another computer. "
+        "Separately, optional inbound scan protection can block a public IP after "
+        "Windows Firewall logs dropped probes to 10 or more distinct local ports "
+        "within 60 seconds. It requires dropped-packet logging to be enabled by "
+        "the owner; it cannot identify Nmap or prove malicious intent. Use the "
+        "alert's Allow this IP action to remove the block. A wrong block can "
+        "interrupt network access.",
     ),
     (
         ("privacy", "private", "data", "upload", "internet", "online"),
@@ -36,9 +41,10 @@ _INTENTS = (
     ),
     (
         ("download", "downloads"),
-        "Download monitoring is optional. When enabled, Morpheus checks new "
-        "supported files in the selected folder; it does not inspect every "
-        "existing file, archive, or download location.",
+        "Selected-folder monitoring is optional. It periodically checks new "
+        "or changed supported files in the selected folder and subfolders, "
+        "using existing files as a baseline. It has a 5,000-file-per-check "
+        "limit and does not inspect every file type or location.",
     ),
     (
         ("process", "running app", "running program", "scan apps"),
@@ -48,9 +54,11 @@ _INTENTS = (
     ),
     (
         ("file", "folder", "virus", "malware", "infected", "safe", "scan"),
-        "File checks look for a few local warning patterns and calculate file "
-        "details. They are not a full antivirus scan. A clean result cannot "
-        "guarantee that a file is safe; keep Microsoft Defender enabled.",
+        "File checks use local heuristics and a small bundled signature catalog "
+        "that includes the harmless EICAR antivirus test string, not a current "
+        "malware feed. A bulk-change alert is also a heuristic, not ransomware "
+        "identification. These checks are not a full antivirus scan or a "
+        "replacement for Microsoft Defender.",
     ),
     (
         ("alert", "warning", "risk", "score", "detection", "found"),
@@ -61,8 +69,11 @@ _INTENTS = (
     (
         ("help", "feature", "what can", "how do", "how does"),
         "Morpheus can check running-app activity, scan selected files and folders "
-        "for simple warning patterns, review supported source code, and explain "
-        "alerts. These checks can miss threats and do not replace Microsoft Defender.",
+        "offline for a limited test signature and heuristic warning patterns, "
+        "periodically monitor selected folders, review supported source code, "
+        "review Windows Firewall drops for optional inbound scan blocking, and "
+        "explain alerts. These checks can miss threats and do not replace "
+        "Microsoft Defender.",
     ),
     (
         ("hello", "hi", "hey", "good morning", "good afternoon"),
@@ -106,5 +117,5 @@ class OfflineAssistant:
             "I can answer common questions about Morpheus, but this built-in "
             "offline helper is not a general-purpose AI. Try asking about an "
             "alert, running apps, file scans, code review, privacy, quarantine, "
-            "or the firewall."
+            "or the firewall and inbound scan controls."
         )

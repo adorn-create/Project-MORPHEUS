@@ -1,4 +1,4 @@
-from morpheus.scanner import StaticScanner
+from morpheus.scanner import SCAN_CHUNK_SIZE, StaticScanner
 from morpheus.scanner import ProtectedSystemPathError
 
 def test_static_scanner(tmp_path):
@@ -74,6 +74,21 @@ def test_static_scanner_reads_each_file_once(tmp_path, monkeypatch):
 
     assert result["size"] == sample.stat().st_size
     assert reads == [sample]
+
+
+def test_static_scanner_detects_local_antivirus_test_signature_across_chunks():
+    signature = b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+    content = b"A" * (SCAN_CHUNK_SIZE - 8) + signature
+
+    result = StaticScanner().scan_bytes(content, "sample.txt")
+
+    assert result["signature_matches"] == [{
+        "id": "eicar-antivirus-test",
+        "name": "EICAR antivirus test file",
+        "classification": "antivirus_test",
+        "description": "Recognized antivirus test content, not a virus.",
+    }]
+    assert "known_test_signature" in result["reasons"]
 
 
 def test_folder_scan_skips_protected_system_subfolders(tmp_path, monkeypatch):

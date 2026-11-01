@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from morpheus import main
@@ -29,8 +31,10 @@ def test_dashboard_renders_background_monitoring_and_folder_picker():
     assert 'id="powershellLogMonitoring"' in response.text
     assert 'id="canaryMonitoring"' in response.text
     assert 'id="processTree"' in response.text
+    assert 'id="startupReviewButton"' in response.text
+    assert 'id="startupReviewResults"' in response.text
     assert 'id="riskLevel"' in response.text
-    assert "Checks files from beginning to end" in response.text
+    assert "small built-in exact test signature" in response.text
     assert "no Ollama" in response.text
     assert "not a general-purpose generative AI" in response.text
 
@@ -194,6 +198,20 @@ def test_automatic_quarantine_is_opt_in(monkeypatch, tmp_path):
     assert response.json()["automatic_quarantine"] is True
 
 
+def test_automatic_inbound_scan_blocking_is_opt_in(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text('{"automatic_inbound_scan_blocking": false}', encoding="utf-8")
+    monkeypatch.setattr(main, "CONFIG_PATH", config_path)
+    with TestClient(main.app) as client:
+        response = client.post(
+            "/api/config",
+            json={"automatic_inbound_scan_blocking": True},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["automatic_inbound_scan_blocking"] is True
+
+
 def test_owner_password_protects_security_settings(monkeypatch, tmp_path):
     password_path = tmp_path / "settings-password.json"
     config_path = tmp_path / "config.json"
@@ -291,6 +309,22 @@ def test_process_tree_endpoint_returns_current_snapshot(monkeypatch):
     assert response.json() == snapshot
 
 
+def test_startup_persistence_endpoint_returns_read_only_inventory(monkeypatch):
+    report = {
+        "available": True,
+        "entries": [],
+        "failures": [],
+        "truncated": False,
+        "message": "Read-only inventory.",
+    }
+    monkeypatch.setattr(main, "inspect_autostart_registry", lambda: report)
+
+    response = TestClient(main.app).get("/api/persistence/startup")
+
+    assert response.status_code == 200
+    assert response.json() == report
+
+
 def test_status_does_not_run_full_journal_verification(monkeypatch):
     monkeypatch.setattr(main.engine.journal, "verify", lambda: (_ for _ in ()).throw(
         AssertionError("dashboard status must not scan the full audit journal")
@@ -315,3 +349,56 @@ def test_firewall_enumeration_timeout_is_reported(monkeypatch):
 
     assert response.status_code == 503
     assert response.json()["detail"] == "timed out"
+
+
+def test_allow_inbound_scan_source_removes_block_and_persists_owner_allowlist(
+    monkeypatch, tmp_path
+):
+    from morpheus.firewall_worker import scan_block_rule_name
+
+    config_path = tmp_path / "config.json"
+    config_path.write_text('{"inbound_scan_allowlist": []}', encoding="utf-8")
+    monkeypatch.setattr(main, "CONFIG_PATH", config_path)
+    rule_name = scan_block_rule_name("1.2.3.4")
+    removed = []
+    events = []
+    monkeypatch.setattr(
+        main.engine.firewall,
+        "list_morpheus_rules",
+        lambda: [{"name": rule_name, "remote_ip": "1.2.3.4", "direction": "in"}],
+    )
+    monkeypatch.setattr(
+        main.engine.firewall,
+        "remove_rule_by_name",
+        lambda name: removed.append(name) or True,
+    )
+    monkeypatch.setattr(main.engine.db, "add", events.append)
+    monkeypatch.setattr(main.engine.journal, "append", events.append)
+
+    response = TestClient(main.app).post(
+        "/api/firewall/allow",
+        json={"remote_ip": "1.2.3.4"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"allowed": True, "remote_ip": "1.2.3.4"}
+    assert removed == [rule_name]
+    assert json.loads(config_path.read_text(encoding="utf-8"))["inbound_scan_allowlist"] == [
+        "1.2.3.4"
+    ]
+    assert len(events) == 2
+    assert events[0]["kind"] == "inbound_scan_allowlisted"
+
+
+def test_allow_inbound_scan_source_rejects_private_ip(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(main, "CONFIG_PATH", config_path)
+
+    response = TestClient(main.app).post(
+        "/api/firewall/allow",
+        json={"remote_ip": "192.168.1.10"},
+    )
+
+    assert response.status_code == 422
+    assert "globally routable" in response.json()["detail"]

@@ -2,7 +2,12 @@ import json
 import subprocess
 import uuid
 import os
-from .firewall_worker import RULE_NAME_PATTERN, WORKER_PIPE, parse_public_ip
+from .firewall_worker import (
+    RULE_NAME_PATTERN,
+    WORKER_PIPE,
+    parse_public_ip,
+    scan_block_rule_name,
+)
 
 
 class FirewallWorkerError(RuntimeError):
@@ -28,6 +33,27 @@ class FirewallController:
         ], capture_output=True, text=True)
         return result.returncode == 0
 
+    def block_inbound_remote(self, remote_ip: str) -> bool:
+        address = parse_public_ip(remote_ip)
+        if address is None:
+            return False
+        if self.use_worker:
+            return self._request_worker({
+                "operation": "add_inbound",
+                "remote_ip": str(address),
+            })
+        rule = scan_block_rule_name(str(address))
+        try:
+            result = subprocess.run([
+                "netsh", "advfirewall", "firewall", "add", "rule",
+                f"name={rule}", "dir=in", "action=block", "enable=yes",
+                "profile=any", "protocol=any",
+                f"remoteip={address}/{address.max_prefixlen}",
+            ], capture_output=True, text=True, timeout=10)
+        except subprocess.TimeoutExpired as exc:
+            raise FirewallWorkerError("Windows Firewall did not add the inbound block within 10 seconds.") from exc
+        return result.returncode == 0
+
     def list_morpheus_rules(self):
         try:
             result = subprocess.run(
@@ -43,12 +69,23 @@ class FirewallController:
             raise FirewallWorkerError(detail)
         rules = []
         current = None
+        current_direction = None
         for line in result.stdout.splitlines():
             if line.startswith("Rule Name:"):
                 current = line.split(":", 1)[1].strip()
-            elif current and current.startswith("Morpheus-Block-") and line.strip().startswith("RemoteIP:"):
-                rules.append({"name": current, "remote_ip": line.split(":", 1)[1].strip()})
+                current_direction = None
+            elif current and line.strip().startswith("Direction:"):
+                current_direction = line.split(":", 1)[1].strip().lower()
+            elif current and current.startswith(("Morpheus-Block-", "Morpheus-Scan-Block-")) and line.strip().startswith("RemoteIP:"):
+                rules.append({
+                    "name": current,
+                    "remote_ip": line.split(":", 1)[1].strip(),
+                    "direction": current_direction or (
+                        "in" if current.startswith("Morpheus-Scan-Block-") else "out"
+                    ),
+                })
                 current = None
+                current_direction = None
         return rules
 
     def remove_rule_by_name(self, name: str):

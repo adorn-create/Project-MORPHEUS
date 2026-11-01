@@ -43,6 +43,14 @@
       "known_security_tool": {
         "label": "Known dual-use security tool is running",
         "weight": 10
+      },
+      "bulk_file_change_review": {
+        "label": "Rapid high-entropy file changes in a monitored folder",
+        "weight": 20
+      },
+      "inbound_port_scan": {
+        "label": "Windows Firewall dropped probes across many ports",
+        "weight": 30
       }
     }
   },

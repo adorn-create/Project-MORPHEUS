@@ -288,7 +288,7 @@ app.whenReady().then(() => {
   ipcMain.handle('morpheus:select-download-folder', async () => {
     if (!window) return null;
     const result = await dialog.showOpenDialog(window, {
-      title: 'Choose folder to monitor for downloads',
+      title: 'Choose folder for local file monitoring',
       buttonLabel: 'Use this folder',
       properties: ['openDirectory'],
     });

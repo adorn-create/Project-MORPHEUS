@@ -1,5 +1,6 @@
 import hashlib
 import io
+import json
 import math
 import os
 from collections import Counter
@@ -82,6 +83,36 @@ class StaticScanner:
             self.yara = yara
         except ImportError:
             self.yara = None
+        signature_path = Path(__file__).with_name("rules") / "file_signatures.json"
+        document = json.loads(signature_path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(document, dict)
+            or document.get("schema_version") != 1
+            or not isinstance(document.get("signatures"), list)
+        ):
+            raise ValueError(f"Invalid file signature catalog: {signature_path}")
+        self.signatures = []
+        seen_ids = set()
+        for signature in document["signatures"]:
+            if not isinstance(signature, dict):
+                raise ValueError(f"Invalid entry in file signature catalog: {signature_path}")
+            signature_id = signature.get("id")
+            try:
+                pattern = bytes.fromhex(signature["pattern_hex"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError(f"Invalid pattern in file signature catalog: {signature_path}") from exc
+            if (
+                not isinstance(signature_id, str)
+                or not signature_id
+                or signature_id in seen_ids
+                or not pattern
+                or not isinstance(signature.get("name"), str)
+                or not isinstance(signature.get("description"), str)
+                or signature.get("classification") not in {"antivirus_test", "suspicious"}
+            ):
+                raise ValueError(f"Invalid entry in file signature catalog: {signature_path}")
+            seen_ids.add(signature_id)
+            self.signatures.append({**signature, "pattern": pattern})
 
     def scan_file(self, path: Path, *, protected_roots: list[Path] | None = None) -> dict:
         path = Path(path)
@@ -106,6 +137,11 @@ class StaticScanner:
             b"create remotethread",
         )
         matched_markers = set()
+        matched_signatures = set()
+        maximum_pattern_length = max(
+            [len(marker) for marker in marker_bytes]
+            + [len(signature["pattern"]) for signature in self.signatures]
+        )
         overlap = b""
         size = 0
         try:
@@ -119,7 +155,12 @@ class StaticScanner:
                 matched_markers.update(
                     marker for marker in marker_bytes if marker in searchable
                 )
-                overlap = searchable[-max(map(len, marker_bytes)):]
+                matched_signatures.update(
+                    signature["id"]
+                    for signature in self.signatures
+                    if signature["pattern"].lower() in searchable
+                )
+                overlap = searchable[-(maximum_pattern_length - 1):]
         except MemoryError as exc:
             raise OSError("Insufficient memory to scan this file.") from exc
         value = self._entropy_from_counts(entropy_counts, size)
@@ -131,6 +172,16 @@ class StaticScanner:
             digest.hexdigest(),
             bytes(sample).lower(),
             marker_count=len(matched_markers),
+            signature_matches=[
+                {
+                    "id": signature["id"],
+                    "name": signature["name"],
+                    "classification": signature["classification"],
+                    "description": signature["description"],
+                }
+                for signature in self.signatures
+                if signature["id"] in matched_signatures
+            ],
         )
 
     def scan_folder(self, path: Path) -> dict:
@@ -213,9 +264,13 @@ class StaticScanner:
         sample: bytes,
         *,
         marker_count: int | None = None,
+        signature_matches: list[dict] | None = None,
     ) -> dict:
         score = 0.0
         reasons = []
+        signature_matches = signature_matches or []
+        if signature_matches:
+            reasons.append("known_test_signature")
         if suffix in {".exe", ".dll", ".scr", ".com", ".ps1", ".js", ".vbs", ".hta"}:
             score += 0.15
             reasons.append("executable_or_script_type")
@@ -238,4 +293,5 @@ class StaticScanner:
             "entropy": round(value, 3),
             "confidence": min(score, 1.0),
             "reasons": reasons,
+            "signature_matches": signature_matches,
         }
