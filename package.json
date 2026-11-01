@@ -1,6 +1,6 @@
 {
   "name": "morpheus-defense-desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "main": "desktop/main.js",
   "scripts": {
@@ -9,7 +9,7 @@
     "build:backend": "node scripts/build-backend.js",
     "build:firewall-worker": "node scripts/build-firewall-worker.js",
     "build:uninstall-helper": "node scripts/build-uninstall-helper.js",
-    "build:win": "npm run build:icons && npm run build:backend && npm run build:firewall-worker && npm run build:uninstall-helper && electron-builder --win nsis",
+    "build:win": "npm run build:icons && npm run build:backend && npm run build:firewall-worker && npm run build:uninstall-helper && electron-builder --win nsis --publish never",
     "test:ui": "node tests/test-dashboard-ui.cjs"
   },
   "devDependencies": {
