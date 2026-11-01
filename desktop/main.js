@@ -2,6 +2,7 @@ const { app, BrowserWindow, Tray, Menu, Notification, dialog, nativeImage, sessi
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
+const { findAvailablePort } = require('./backend-port');
 
 let window;
 let tray;
@@ -9,7 +10,7 @@ let backend;
 let notificationTimer;
 let lastNotifiedEventId = 0;
 let notificationsInitialized = false;
-const backendUrl = 'http://127.0.0.1:8080';
+let backendUrl;
 const startupSettingsPath = path.join(app.getPath('userData'), 'settings.json');
 
 function appIcon() {
@@ -76,8 +77,9 @@ async function startBackend() {
   }
 
   const args = app.isPackaged
-    ? ['--host', '127.0.0.1', '--port', '8080']
-    : ['-m', 'uvicorn', 'morpheus.main:app', '--host', '127.0.0.1', '--port', '8080'];
+    ? ['--host', '127.0.0.1', '--port', String(await findAvailablePort())]
+    : ['-m', 'uvicorn', 'morpheus.main:app', '--host', '127.0.0.1', '--port', String(await findAvailablePort())];
+  backendUrl = `http://127.0.0.1:${args[args.length - 1]}`;
   const cwd = app.isPackaged ? userData : app.getAppPath();
   const logFile = fs.openSync(logPath, 'a');
   backend = spawn(executable, args, {
@@ -109,14 +111,38 @@ async function startBackend() {
 }
 
 async function waitForBackend() {
-  for (let attempt = 0; attempt < 60; attempt++) {
+  const deadline = Date.now() + 90000;
+  let lastError = 'no response received';
+  while (Date.now() < deadline) {
+    if (backend.exitCode !== null || backend.signalCode !== null) {
+      const exit = backend.exitCode !== null
+        ? `exit code ${backend.exitCode}`
+        : `signal ${backend.signalCode}`;
+      throw new Error(
+        `The Morpheus backend stopped before becoming ready (${exit}).\n\n` +
+        `Check the backend log for details:\n${path.join(app.getPath('userData'), 'backend.log')}`
+      );
+    }
+    let result;
     try {
-      const result = await fetch(`${backendUrl}/api/status`);
-      if (result.ok) return true;
-    } catch {}
-    await new Promise(resolve => setTimeout(resolve, 500));
+      result = await fetch(`${backendUrl}/api/status`, {
+        signal: AbortSignal.timeout(2000),
+      });
+    } catch (error) {
+      lastError = error.message;
+      await new Promise(resolve => setTimeout(resolve, 250));
+      continue;
+    }
+    if (result.ok) return true;
+    throw new Error(
+      `The Morpheus backend responded with HTTP ${result.status} instead of 200.\n\n` +
+      `Check the backend log for details:\n${path.join(app.getPath('userData'), 'backend.log')}`
+    );
   }
-  return false;
+  throw new Error(
+    `The Morpheus backend did not become ready within 90 seconds (last check: ${lastError}).\n\n` +
+    `Check the backend log for details:\n${path.join(app.getPath('userData'), 'backend.log')}`
+  );
 }
 
 async function createWindow() {
@@ -244,7 +270,15 @@ async function notifyNewQuarantines() {
   }
 }
 
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => openWindow());
+}
+
 app.whenReady().then(() => {
+  if (!hasSingleInstanceLock) return;
   Menu.setApplicationMenu(null);
   ipcMain.handle('morpheus:select-folder', async () => {
     if (!window) return null;

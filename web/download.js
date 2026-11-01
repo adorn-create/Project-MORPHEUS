@@ -1,6 +1,6 @@
 const repository = 'adorn-create/Project-MORPHEUS';
 const releaseUrl = `https://api.github.com/repos/${repository}/releases/latest`;
-const currentInstallerUrl = `https://github.com/${repository}/releases/download/v0.1.0/Morpheus.Defense.Setup.0.1.0.exe`;
+const currentInstallerUrl = `https://github.com/${repository}/releases/download/v0.1.1/Morpheus.Defense.Setup.0.1.1.exe`;
 const headerDownload = document.querySelector('#header-download');
 const headerDownloadLabel = document.querySelector('#header-download-label');
 const downloadButton = document.querySelector('#download-button');
@@ -27,7 +27,7 @@ async function loadLatestRelease() {
     });
     if (!response.ok) {
       if (response.status === 404) {
-        useReleaseFallback('Direct download available · v0.1.0');
+        useReleaseFallback('Direct download available · v0.1.1');
         return;
       }
       throw new Error(`GitHub returned ${response.status}`);
@@ -38,7 +38,7 @@ async function loadLatestRelease() {
       /^Morpheus[ ._-]+Defense[ ._-]+Setup[ ._-]+.+\.exe$/i.test(asset.name),
     );
     if (!installer) {
-      useReleaseFallback('Direct download available · v0.1.0');
+      useReleaseFallback('Direct download available · v0.1.1');
       return;
     }
 

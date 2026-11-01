@@ -1,6 +1,8 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const net = require('node:net');
 const vm = require('node:vm');
+const { findAvailablePort } = require('../desktop/backend-port');
 
 class Element {
   constructor(id = '') {
@@ -233,6 +235,26 @@ const window = {
 };
 
 async function main() {
+  const occupiedServer = net.createServer();
+  await new Promise((resolve, reject) => {
+    occupiedServer.once('error', reject);
+    occupiedServer.listen(0, '127.0.0.1', resolve);
+  });
+  const occupiedPort = occupiedServer.address().port;
+  const port = await findAvailablePort();
+  assert.notEqual(port, occupiedPort);
+  const server = net.createServer();
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', resolve);
+  });
+  await new Promise((resolve, reject) => {
+    server.close(error => error ? reject(error) : resolve());
+  });
+  await new Promise((resolve, reject) => {
+    occupiedServer.close(error => error ? reject(error) : resolve());
+  });
+
   const html = fs.readFileSync('morpheus/templates/dashboard.html', 'utf8');
   const downloadSite = fs.readFileSync('web/index.html', 'utf8');
   assert.match(downloadSite, /<img class="brand-mark" src="favicon\.svg" alt="">/);
