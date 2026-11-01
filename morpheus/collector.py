@@ -93,8 +93,8 @@ _SCRIPT_LAUNCH_PARENTS = {
 }
 
 
-def process_tree_snapshot(processes, limit=2000):
-    included = processes[:limit]
+def process_tree_snapshot(processes):
+    included = processes
     by_pid = {item["pid"]: item for item in included if item.get("pid") is not None}
     nodes = []
     edges = []
@@ -127,6 +127,6 @@ def process_tree_snapshot(processes, limit=2000):
     return {
         "nodes": nodes,
         "edges": edges,
-        "truncated": len(processes) > limit,
+        "truncated": False,
         "total_processes": len(processes),
     }

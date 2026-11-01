@@ -28,6 +28,13 @@ function setStartupPreference(enabled) {
   fs.writeFileSync(startupSettingsPath, JSON.stringify({ openAtLogin: enabled }, null, 2));
 }
 
+function openWindow() {
+  if (!window || window.isDestroyed()) return;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+}
+
 function backendExecutable() {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, 'backend', 'morpheus-backend.exe');
@@ -271,11 +278,15 @@ app.whenReady().then(() => {
       await createWindow();
       notifyNewQuarantines();
       notificationTimer = setInterval(notifyNewQuarantines, 10000);
-      tray = new Tray(nativeImage.createEmpty());
+      const trayIconPath = path.join(__dirname, 'tray-icon.ico');
+      const trayIcon = nativeImage.createFromPath(trayIconPath);
+      if (trayIcon.isEmpty()) throw new Error(`The Morpheus tray icon is missing or invalid:\n${trayIconPath}`);
+      tray = new Tray(trayIcon);
       tray.setToolTip('Morpheus Defense');
+      tray.on('click', openWindow);
       tray.setContextMenu(Menu.buildFromTemplate([
-        { label: 'Open Morpheus', click: () => window.show() },
-        { label: 'Run scan', click: () => fetch(`${backendUrl}/api/scan`, { method: 'POST' }).catch(() => {}) },
+        { label: 'Open Morpheus', click: openWindow },
+        { label: 'Check running apps', click: () => fetch(`${backendUrl}/api/scan`, { method: 'POST' }).catch(() => {}) },
         {
           label: 'Start Morpheus at Windows sign-in',
           type: 'checkbox',
@@ -294,7 +305,7 @@ app.whenReady().then(() => {
   })();
 });
 
-app.on('activate', () => window?.show());
+app.on('activate', openWindow);
 app.on('before-quit', () => { app.isQuitting = true; });
 app.on('will-quit', () => {
   if (notificationTimer) clearInterval(notificationTimer);

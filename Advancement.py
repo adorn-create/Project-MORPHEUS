@@ -29,7 +29,6 @@ CANARY_CONTENTS = {
     ).encode("utf-8"),
 }
 POLL_INTERVAL_SECONDS = 3.0
-MAX_PROCESSES_PER_POLL = 5000
 NETWORK_CAPTURE_FILTER = "udp port 53 or tcp port 53 or arp"
 DNS_LABEL_MIN_LENGTH = 24
 DNS_LABEL_ENTROPY_THRESHOLD = 3.5
@@ -250,9 +249,7 @@ class ComprehensiveReviewSystem:
         active_signals = set()
         detected = []
         processes = psutil.process_iter(["pid", "ppid", "name", "cmdline"])
-        for index, proc in enumerate(processes):
-            if index >= MAX_PROCESSES_PER_POLL:
-                break
+        for proc in processes:
             try:
                 info = proc.info
                 name = (info.get("name") or "").casefold()

@@ -66,6 +66,19 @@ def test_process_tree_marks_document_app_launching_script_host_for_review():
     assert "review" in reviewed[0]["reason"].lower()
 
 
+def test_process_tree_includes_every_process():
+    processes = [
+        {"pid": pid, "ppid": 1, "name": f"app-{pid}.exe"}
+        for pid in range(1, 2002)
+    ]
+
+    snapshot = collector.process_tree_snapshot(processes)
+
+    assert snapshot["total_processes"] == len(processes)
+    assert len(snapshot["nodes"]) == len(processes)
+    assert snapshot["truncated"] is False
+
+
 def test_lolbin_command_patterns_return_indicators_without_raw_arguments():
     arguments = ["powershell.exe", "-EncodedCommand", "sensitive-command-content"]
 

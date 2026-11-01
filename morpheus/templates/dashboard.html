@@ -200,7 +200,7 @@
       <div><p class="eyebrow">Local endpoint monitoring</p><h1>MORPHEUS DEFENSE</h1></div>
     </div>
     <nav class="top-actions" aria-label="Dashboard actions">
-      <button class="primary" id="runScanButton" type="button">Run scan</button>
+      <button class="primary" id="runScanButton" type="button">Check running apps</button>
       <button id="refreshButton" type="button">Refresh data</button>
     </nav>
   </header>
@@ -211,27 +211,27 @@
     </section>
 
     <section class="grid" aria-label="Security summary">
-      <article class="card"><div class="card-label">Recorded events</div><div class="card-value" id="eventCount">{{ events|length }}</div></article>
-      <article class="card"><div class="card-label">Auto-quarantine</div><div class="card-value small" id="quarantineState">{{ 'ON' if config.get('automatic_quarantine', false) else 'OFF' }}</div></article>
-      <article class="card"><div class="card-label">Background monitoring</div><div class="card-value small" id="monitoringState">Checking</div><div class="card-detail" id="lastScanTime">Waiting for first scan</div><div class="card-detail" id="downloadMonitorState">Downloads: OFF</div></article>
-      <article class="card"><div class="card-label">Known tool signatures</div><div class="card-value" id="toolCatalogCount">Checking</div><div class="card-detail">Running-process name matches; not exhaustive</div></article>
-      <article class="card"><div class="card-label">Recent review priority</div><div class="card-value small" id="riskLevel">Checking</div><div class="card-detail" id="riskDetails">Based on recent alert types, not a probability</div></article>
+      <article class="card"><div class="card-label">Alerts saved</div><div class="card-value" id="eventCount">{{ events|length }}</div></article>
+      <article class="card"><div class="card-label">Automatic file holding</div><div class="card-value small" id="quarantineState">{{ 'ON' if config.get('automatic_quarantine', false) else 'OFF' }}</div></article>
+      <article class="card"><div class="card-label">Background checks</div><div class="card-value small" id="monitoringState">Checking</div><div class="card-detail" id="lastScanTime">Waiting for first check</div><div class="card-detail" id="downloadMonitorState">Download checks: OFF</div></article>
+      <article class="card"><div class="card-label">Known security apps watched</div><div class="card-value" id="toolCatalogCount">Checking</div><div class="card-detail">Checks names only; list is not complete</div></article>
+      <article class="card"><div class="card-label">Recent alerts to review</div><div class="card-value small" id="riskLevel">Checking</div><div class="card-detail" id="riskDetails">A reminder based on recent alerts; not a diagnosis.</div></article>
     </section>
 
     <section class="section panel scan-panel" aria-labelledby="scanTitle">
       <div class="scan-copy">
-        <h2 id="scanTitle">Process behavior scan</h2>
-        <p>Review process behavior and known dual-use security tools currently running on this device. Tool-name matches can be legitimate, are never auto-blocked, and the catalog is not exhaustive. Morpheus checks process names and paths, plus a few command-line patterns for built-in tools; it does not save raw command lines or inspect file contents or process memory.</p>
+        <h2 id="scanTitle">Check running apps</h2>
+        <p>Checks apps running right now for a few unusual signs. It does not scan your files. A clean result does not prove your computer is virus-free. Some alerts may be for legitimate apps.</p>
         <div class="scan-status" id="scanStatus" role="status" aria-live="polite">Ready to scan this device.</div>
       </div>
-      <button class="primary" id="scanPanelButton" type="button">Start scan</button>
+      <button class="primary" id="scanPanelButton" type="button">Check running apps</button>
     </section>
 
     <section class="section" aria-labelledby="eventsTitle">
-      <div class="section-heading"><h2 id="eventsTitle">Recent detections</h2><span class="subtle">Latest observed events</span></div>
+      <div class="section-heading"><h2 id="eventsTitle">Recent alerts</h2><span class="subtle">Things Morpheus noticed; an alert is not proof of a virus.</span></div>
       <div class="panel table-wrap">
         <table>
-          <thead><tr><th>When</th><th>Status</th><th>Area</th><th>Item</th><th>What it means</th><th>Next step</th></tr></thead>
+          <thead><tr><th>When</th><th>How serious</th><th>Where</th><th>App or file</th><th>What Morpheus noticed</th><th>What happened next</th></tr></thead>
           <tbody id="eventsBody"></tbody>
         </table>
       </div>
@@ -239,120 +239,116 @@
 
     <section class="section tools-grid">
       <div class="panel" aria-labelledby="fileScanTitle">
-        <div class="section-heading"><h2 id="fileScanTitle">Static file analysis</h2></div>
-        <p class="subtle">Morpheus checks for a few file patterns. These notes are not a malware verdict; compressed photos and archives can look unusual.</p>
+        <div class="section-heading"><h2 id="fileScanTitle">Check files and folders</h2></div>
+        <p class="subtle">Checks files from beginning to end for a few known patterns and creates a file fingerprint. This is not a full antivirus scan and may miss malware. A clean result does not guarantee a file is safe.</p>
         <div class="setting-toggle">
           <input id="automaticQuarantine" type="checkbox" {% if config.get('automatic_quarantine', false) %}checked{% endif %}>
-          <label for="automaticQuarantine">Automatically quarantine high-confidence process detections</label>
+          <label for="automaticQuarantine">Automatically move strongly flagged running apps into a holding area</label>
         </div>
         <div class="setting-toggle">
           <input id="downloadMonitoring" type="checkbox" {% if config.get('download_monitoring', false) %}checked{% endif %}>
-          <label for="downloadMonitoring">Monitor new downloads in the Windows Downloads folder</label>
+          <label for="downloadMonitoring">Check new files added to the selected downloads folder</label>
         </div>
         <div class="field-row">
           <input id="downloadDirectoryPath" aria-label="Download monitoring folder" readonly value="{{ config.get('download_directory') or '' }}" placeholder="Default: your user's Downloads folder">
           <button id="browseDownloadFolderButton" type="button">Choose monitored folder</button>
         </div>
-        <p class="password-state">Choose a folder on any drive (for example D:\Downloads). Existing files are treated as already present; new supported files are checked after they finish downloading.</p>
+        <p class="password-state">Choose a folder to watch. Only new files are checked after downloading; older files are not checked automatically.</p>
         <div class="setting-toggle">
           <input id="quarantineDownloads" type="checkbox" {% if config.get('automatic_quarantine_downloads', false) %}checked{% endif %}>
-          <label for="quarantineDownloads">Automatically quarantine downloads flagged by local heuristics</label>
+          <label for="quarantineDownloads">Automatically put downloads with warning signs into a holding area</label>
         </div>
-        <p class="subtle">Quarantined files can be restored. This uses local heuristics, not web reputation checks, and does not intercept every download.</p>
+        <p class="subtle">You can restore a held file later. Morpheus does not check website reputations or catch every download.</p>
         <div class="field-row">
           <input id="scanPath" aria-label="File or folder path to scan" placeholder="Choose a file or folder, or enter its path">
           <button id="browseFileButton" type="button">Browse file</button>
-          <button class="primary" id="fileScanButton" type="button">Analyze file</button>
+          <button class="primary" id="fileScanButton" type="button">Check this file</button>
           <button id="browseFolderButton" type="button">Browse folder</button>
-          <button id="reviewCodeButton" type="button">Review source code</button>
+          <button id="reviewCodeButton" type="button">Review source code offline</button>
           <input id="folderInput" type="file" webkitdirectory multiple hidden aria-label="Choose a folder to scan">
         </div>
-        <p class="subtle">Code review uses Morpheus's own local deterministic rules. It checks selected source files and folders for common risky patterns, reports line numbers and fixes, and may miss issues or flag safe code. It does not upload or save source code.</p>
+        <p class="subtle">Morpheus checks supported code for common security mistakes entirely on this computer. It does not need or send code to an AI service. These rules can miss problems and are not an antivirus scan.</p>
         <div class="result" id="scanResult" role="status" aria-live="polite">Enter a file path or choose a folder to analyze.</div>
         <div class="folder-results" id="folderResults"></div>
       </div>
       <div class="panel" aria-labelledby="sysmonTitle">
-        <div class="section-heading"><h2 id="sysmonTitle">Sysmon status</h2></div>
+        <div class="section-heading"><h2 id="sysmonTitle">Optional Windows activity logger (Sysmon)</h2></div>
         <div class="sysmon-copy" id="sysmonStatus">Checking local installation...</div>
       </div>
     </section>
 
     <section class="section panel" aria-labelledby="assistantTitle">
       <div class="section-heading">
-        <div><h2 id="assistantTitle">Local Morpheus assistant</h2><p class="subtle">Ask about alerts, dashboard features, or defensive next steps.</p></div>
+        <div><h2 id="assistantTitle">Morpheus Offline Helper</h2><p class="subtle">Get quick explanations about alerts and app features.</p></div>
       </div>
-      <p class="subtle">Uses models already installed in Ollama on this device. Messages go only to the local Ollama service; chat history is kept in this page's memory and is not saved by Morpheus. The assistant is read-only and cannot run scans or change settings. Answers can be wrong.</p>
-      <div class="assistant-controls">
-        <label for="assistantModel">Local model<select id="assistantModel" disabled><option value="">Checking local Ollama...</option></select></label>
-        <button id="refreshAssistantModels" type="button">Refresh models</button>
-      </div>
-      <p class="assistant-status" id="assistantStatus" role="status" aria-live="polite">Checking whether local Ollama is available...</p>
+      <p class="subtle">Built into Morpheus: no Ollama, model download, or internet connection needed. It gives prepared answers to common questions; it is not a general-purpose generative AI and cannot change settings or take actions.</p>
+      <p class="assistant-status" id="assistantStatus" role="status" aria-live="polite">Ready to answer common questions about Morpheus.</p>
       <div class="assistant-conversation" id="assistantConversation" role="log" aria-live="polite" aria-label="Assistant conversation">
-        <div class="assistant-message assistant">I can explain Morpheus alerts and suggest cautious defensive next steps. I cannot take actions on your device.</div>
+        <div class="assistant-message assistant">Ask about alerts, running apps, file scans, code review, privacy, quarantine, or firewall controls. I cannot control your computer.</div>
       </div>
       <form class="assistant-form" id="assistantForm">
-        <textarea id="assistantQuestion" maxlength="2000" rows="3" aria-label="Question for the local assistant" placeholder="Ask a question about Morpheus Defense..."></textarea>
-        <button class="primary" id="sendAssistantQuestion" type="submit" disabled>Send</button>
+        <textarea id="assistantQuestion" maxlength="2000" rows="3" aria-label="Question for the local assistant" placeholder="Type your question here..."></textarea>
+        <button class="primary" id="sendAssistantQuestion" type="submit">Send question</button>
       </form>
     </section>
 
     <section class="section tools-grid" aria-label="Expansion monitoring">
       <div class="panel" aria-labelledby="expansionTitle">
-        <div class="section-heading"><h2 id="expansionTitle">Expansion pipeline</h2></div>
-        <p class="subtle">These sensors create local review alerts only. DNS and PowerShell telemetry are opt-in. They do not kill processes, isolate devices, or change firewall rules; separate existing quarantine settings remain configurable.</p>
+        <div class="section-heading"><h2 id="expansionTitle">Optional extra checks</h2></div>
+        <p class="subtle">These optional checks look for a few unusual signs and report them for you to review. They do not automatically stop an app or change your network.</p>
         <div class="setting-toggle">
           <input id="dnsEntropyMonitoring" type="checkbox" {% if config.get('dns_entropy_monitoring', false) %}checked{% endif %}>
-          <label for="dnsEntropyMonitoring">Review new cached DNS names for unusually random labels</label>
+          <label for="dnsEntropyMonitoring">Look for unusual website lookups saved by Windows</label>
         </div>
         <p class="password-state" id="dnsMonitorStatus" role="status">DNS monitoring status: checking...</p>
         <div class="setting-toggle">
           <input id="powershellLogMonitoring" type="checkbox" {% if config.get('powershell_log_monitoring', false) %}checked{% endif %}>
-          <label for="powershellLogMonitoring">Review new PowerShell Script Block Logging events (4104)</label>
+          <label for="powershellLogMonitoring">Check PowerShell activity recorded by Windows</label>
         </div>
         <p class="password-state" id="powershellMonitorStatus" role="status">PowerShell monitoring status: checking...</p>
         <div class="setting-toggle">
           <input id="processTreeMonitoring" type="checkbox" {% if config.get('process_tree_monitoring', true) %}checked{% endif %}>
-          <label for="processTreeMonitoring">Monitor process parent-child relationships</label>
+          <label for="processTreeMonitoring">Show which apps started other apps</label>
         </div>
         <div class="setting-toggle">
           <input id="canaryMonitoring" type="checkbox" {% if config.get('canary_monitoring', false) %}checked{% endif %}>
-          <label for="canaryMonitoring">Monitor harmless Morpheus canary files in its data folder</label>
+          <label for="canaryMonitoring">Watch harmless Morpheus decoy files for unexpected changes</label>
         </div>
         <p class="password-state" id="canaryMonitorStatus" role="status">Canary status: checking...</p>
-        <p class="password-state">Findings are heuristics, not proof of compromise. Any firewall response remains a separate, manually confirmed action.</p>
+        <p class="password-state">These checks can make mistakes and do not prove your computer is infected.</p>
       </div>
       <div class="panel" aria-labelledby="processTreeTitle">
-        <div class="section-heading"><h2 id="processTreeTitle">Process relationship snapshot</h2></div>
-        <p class="subtle">The graph uses process names and IDs; command lines are not included in the graph or stored. A separate small ruleset checks a few command patterns in memory. Document apps launching script hosts are highlighted for review.</p>
+        <div class="section-heading"><h2 id="processTreeTitle">Which apps started other apps</h2></div>
+        <p class="subtle">This list shows app-to-app launches. A highlighted launch may be normal; check whether you expected it.</p>
         <div class="tree-list" id="processTree" role="status" aria-live="polite">Waiting for the first process snapshot...</div>
       </div>
     </section>
 
     <section class="section" aria-labelledby="timelineTitle">
-      <div class="section-heading"><h2 id="timelineTitle">ATT&amp;CK timeline</h2><span class="subtle">Mapped from recorded detections</span></div>
+      <div class="section-heading"><h2 id="timelineTitle">What happened</h2><span class="subtle">Plain-language summaries of alerts</span></div>
       <div class="timeline-list" id="timeline"></div>
     </section>
 
     <section class="section tools-grid" aria-label="Firewall and owner controls">
       <div class="panel" aria-labelledby="firewallTitle">
-        <div class="section-heading"><h2 id="firewallTitle">Outbound firewall rules</h2></div>
-        <p class="subtle">Block one globally routable IPv4 or IPv6 address, or remove a Morpheus-owned rule. This manages outbound rules in Windows Firewall; changes may disrupt network access.</p>
+        <div class="section-heading"><h2 id="firewallTitle">Block an internet address (advanced)</h2></div>
+        <p class="subtle">This stops this computer from connecting out to the address you enter. It does not block or control someone else's computer. A wrong address can interrupt websites or apps. Only use this if you know what the address is.</p>
         <div class="worker-state" id="firewallWorkerState" role="status"><span class="dot"></span><span>Checking privileged worker...</span></div>
-        <button class="firewall-worker-button" id="startFirewallWorkerButton" type="button" hidden>Start firewall service (administrator approval)</button>
+        <button class="firewall-worker-button" id="startFirewallWorkerButton" type="button" hidden>Start firewall helper (Windows approval)</button>
         <p class="result" id="firewallActionStatus" role="status" aria-live="polite"></p>
         <div class="field-row">
-          <input id="firewallIp" type="text" inputmode="text" aria-label="Public IP address to block" placeholder="8.8.8.8 or 2001:4860:4860::8888">
-          <button class="primary" id="addFirewallRuleButton" type="button">Block address</button>
+          <input id="firewallIp" type="text" inputmode="text" aria-label="IP address this computer should not connect to" placeholder="Enter an IP address, e.g. 203.0.113.1">
+          <button class="primary" id="addFirewallRuleButton" type="button">Block this address</button>
         </div>
         <div class="firewall-rules" id="firewallRules"></div>
       </div>
       <div class="panel" aria-labelledby="ownerSecurityTitle">
-        <div class="section-heading"><h2 id="ownerSecurityTitle">Owner settings protection</h2></div>
-        <p class="subtle">Set a local password to confirm security-setting and firewall changes. It is stored as a salted password hash on this device.</p>
+        <div class="section-heading"><h2 id="ownerSecurityTitle">Confirm important changes with a password</h2></div>
+        <p class="subtle">Optional: set a Morpheus-only password before changing security settings or firewall rules. It is saved securely on this computer. It is not your Windows password.</p>
         <div class="field-row">
           <input id="ownerPasswordInput" type="password" autocomplete="current-password" aria-label="Owner settings password" placeholder="Enter password to confirm changes">
         </div>
-        <button id="settingsPasswordButton" type="button">Set owner password</button>
+        <button id="settingsPasswordButton" type="button">Set Morpheus password</button>
         <p class="password-state" id="settingsPasswordState" role="status">No owner password configured.</p>
         <form class="password-form" id="settingsPasswordForm" hidden>
           <label for="newOwnerPassword">New password (at least 10 characters)</label>
@@ -365,7 +361,7 @@
             <button id="cancelOwnerPasswordButton" type="button">Cancel</button>
           </div>
         </form>
-        <p class="password-state">This password does not control Windows sign-in or uninstall. The device owner can always remove Morpheus normally.</p>
+        <p class="password-state">You can still sign in to Windows or uninstall Morpheus without this password.</p>
       </div>
     </section>
   </main>
@@ -389,19 +385,19 @@ const dnsEntropyMonitoring = document.getElementById('dnsEntropyMonitoring');
 const powershellLogMonitoring = document.getElementById('powershellLogMonitoring');
 const processTreeMonitoring = document.getElementById('processTreeMonitoring');
 const canaryMonitoring = document.getElementById('canaryMonitoring');
-const assistantModel = document.getElementById('assistantModel');
 const assistantStatus = document.getElementById('assistantStatus');
+const reviewCodeButton = document.getElementById('reviewCodeButton');
 const assistantConversation = document.getElementById('assistantConversation');
 const assistantForm = document.getElementById('assistantForm');
 const assistantQuestion = document.getElementById('assistantQuestion');
 const sendAssistantQuestion = document.getElementById('sendAssistantQuestion');
-const assistantHistory = [];
-const maxFolderFiles = 10000;
-const maxFolderBytes = 30 * 1024 * 1024 * 1024;
-const maxFileBytes = 100 * 1024 * 1024;
 let settingsPasswordConfigured = false;
 let firewallRulesLoaded = false;
 let firewallRulesLoading = false;
+
+function setCodeReviewButtonsDisabled(disabled) {
+  reviewCodeButton.disabled = disabled;
+}
 
 if (window.morpheus && typeof window.morpheus.onFullScreenChanged === 'function') {
   window.morpheus.onFullScreenChanged(isFullScreen => {
@@ -466,8 +462,25 @@ function readableEvidence(value) {
       return value || 'No extra details were recorded.';
     }
   }
-  if (!Array.isArray(items)) return String(value || 'No extra details were recorded.');
-  const notes = items.map(item => explanations[item] || String(item));
+  if (!Array.isArray(items)) {
+    if (items && typeof items === 'object') {
+      return typeof items.description === 'string'
+        ? items.description
+        : 'Additional technical details were recorded for this alert.';
+    }
+    return String(value || 'No extra details were recorded.');
+  }
+  const notes = items.map(item => {
+    if (typeof item === 'string') {
+      return explanations[item] || `A local warning pattern was matched: ${item.replace(/_/g, ' ')}.`;
+    }
+    if (item && typeof item === 'object') {
+      return typeof item.description === 'string'
+        ? item.description
+        : 'Additional technical details were recorded for this alert.';
+    }
+    return String(item);
+  });
   return notes.length ? notes.join(' ') : 'No known local warning patterns were found. This is not a guarantee that the file is safe.';
 }
 
@@ -481,26 +494,33 @@ function friendlyEvidence(value, kind) {
     }
   }
   if (kind === 'dns_entropy') {
-    return 'A newly cached DNS name contains a long, unusually random label. Some legitimate tracking and delivery services do this too; review the domain before taking action.';
+    return 'Windows saved a website lookup with an unusually random-looking name. Some legitimate websites do this too; this does not prove anything is wrong.';
   }
   if (kind === 'powershell_script_block') {
-    const indicators = Array.isArray(evidence.indicators) ? evidence.indicators.join(', ') : 'unusual script patterns';
-    return `PowerShell event 4104 matched review patterns (${indicators}). Script contents are not stored; this is not proof of malicious activity.`;
+    return 'Windows recorded PowerShell activity that matched a few warning patterns. This can be normal; the script contents were not saved.';
   }
   if (kind === 'process_tree_review') {
-    return evidence.reason || 'A document application started a command or script host. This can be legitimate; verify the parent and child processes.';
+    return 'A document or office app started another app that can run commands. This can be normal; check whether you expected it.';
   }
   if (kind === 'lolbin_command_pattern') {
-    const indicators = Array.isArray(evidence.indicators) ? evidence.indicators.join(', ') : 'a built-in tool command pattern';
-    return `A running process matched a review-only command pattern (${indicators}). Command text is not stored; the process may still be legitimate.`;
+    return 'A running app used a built-in Windows tool in a way that can be unusual. The app may still be legitimate; check whether you started it.';
   }
   if (kind === 'canary_file_change') {
-    return `A harmless Morpheus decoy marker was ${evidence.state || 'changed'}. This can indicate unexpected access to the Morpheus data folder; review local activity.`;
+    return 'A harmless Morpheus decoy file was changed or removed. Check whether you or another app recently changed Morpheus files.';
+  }
+  if (kind === 'suspicious_process') {
+    return readableEvidence(evidence);
+  }
+  if (kind === 'download_suspicious') {
+    return 'A new download matched a few local warning signs. This does not prove it is harmful; do not open it unless you trust where it came from.';
+  }
+  if (kind === 'download_scan_error') {
+    return 'Morpheus could not check a new download. Check the file manually with Windows Security.';
   }
   if (Array.isArray(evidence)) return readableEvidence(evidence);
   if (evidence && typeof evidence === 'object') {
     if (evidence.tool) return `${evidence.tool} is running. Security tools can be used legitimately; review its source and purpose.`;
-    return Object.entries(evidence).map(([key, item]) => `${key.replaceAll('_', ' ')}: ${String(item)}`).join('; ');
+    return 'Morpheus recorded extra technical details for this alert.';
   }
   return String(evidence || 'No extra details were recorded.');
 }
@@ -516,12 +536,12 @@ function friendlySeverity(value) {
 
 function friendlyResponse(value) {
   if (!value) return 'No action recorded.';
-  if (value === 'review_required_manual_approval') return 'Alert recorded; no automatic action. Use the firewall panel only after reviewing and confirming.';
-  if (String(value).startsWith('quarantined:')) return 'Moved to quarantine; review it before restoring.';
-  if (value === 'flagged_pending_review') return 'Flagged for you to review; no automatic removal.';
-  if (String(value).startsWith('quarantine_failed:')) return 'Flagged, but Morpheus could not move it to quarantine.';
-  if (String(value).startsWith('download_scan_skipped:')) return 'Not scanned; the file was skipped.';
-  if (String(value).startsWith('download_scan_failed:')) return 'Could not scan this file.';
+  if (value === 'review_required_manual_approval') return 'No changes were made. Please review this alert yourself.';
+  if (String(value).startsWith('quarantined:')) return 'Moved to the holding area. Review it before restoring.';
+  if (value === 'flagged_pending_review') return 'Flagged for you to review. Nothing was removed.';
+  if (String(value).startsWith('quarantine_failed:')) return 'Flagged, but Morpheus could not move it to the holding area.';
+  if (String(value).startsWith('download_scan_skipped:')) return 'This file was skipped and was not checked.';
+  if (String(value).startsWith('download_scan_failed:')) return 'Morpheus could not check this file.';
   return String(value);
 }
 
@@ -534,7 +554,7 @@ function renderEvents(events) {
     const cell = document.createElement('td');
     cell.colSpan = 6;
     cell.className = 'empty';
-    cell.textContent = 'No detections recorded. Run a scan to check current process activity.';
+    cell.textContent = 'No alerts have been recorded. This does not mean every file or app is safe.';
     row.appendChild(cell);
     body.appendChild(row);
     return;
@@ -560,7 +580,7 @@ function renderTimeline(items) {
   if (!items.length) {
     const empty = document.createElement('div');
     empty.className = 'panel empty';
-    empty.textContent = 'No ATT&CK techniques mapped yet. Detections will appear here when available.';
+    empty.textContent = 'No alerts to explain yet. When Morpheus notices something, it will appear here.';
     timeline.appendChild(empty);
     return;
   }
@@ -569,15 +589,18 @@ function renderTimeline(items) {
     card.className = 'timeline-item';
     const title = document.createElement('div');
     title.className = 'timeline-title';
-    const technique = document.createElement('span');
-    technique.className = 'technique';
-    technique.textContent = item.technique_id || 'Unknown technique';
     const name = document.createElement('span');
-    name.textContent = item.technique_name || 'Unmapped activity';
-    title.append(technique, name);
+    name.textContent = ({
+      'T1204': 'A program was opened',
+      'T1059.001': 'PowerShell ran a command',
+      'T1059.003': 'Command Prompt ran a command',
+      'T1059.005': 'A Windows script ran',
+      'T1218.005': 'Windows opened web content as a program',
+    })[item.technique_id] || item.technique_name || 'Program activity was noticed';
+    title.appendChild(name);
     const meta = document.createElement('div');
     meta.className = 'timeline-meta';
-    meta.textContent = `${item.timestamp || ''} | ${item.target || 'Unknown target'} | ${item.attack_stage || 'Activity'}`;
+    meta.textContent = `${item.timestamp ? new Date(item.timestamp).toLocaleString() : ''} | ${item.target || 'Unknown app'}`;
     card.append(title, meta);
     timeline.appendChild(card);
   }
@@ -611,35 +634,31 @@ function renderProcessTree(data) {
   container.replaceChildren();
   const summary = document.createElement('p');
   summary.className = 'password-state';
-  summary.textContent = `${data.total_processes} processes, ${data.edges.length} parent-child relationships${data.truncated ? ' (display data capped)' : ''}.`;
+  summary.textContent = `Reviewed relationships among ${data.total_processes} running ${data.total_processes === 1 ? 'app' : 'apps'}; found ${data.edges.length} app-to-app launches.`;
   container.appendChild(summary);
   if (!data.edges.length) {
     const empty = document.createElement('div');
     empty.className = 'tree-item';
     empty.textContent = data.nodes.length
-      ? 'No parent-child relationships were available in this snapshot.'
-      : 'No process snapshot available yet. Run a scan or wait for background monitoring.';
+      ? 'No app-to-app launches were available in this check.'
+      : 'No app activity has been collected yet. Click “Check running apps” or wait a moment.';
     container.appendChild(empty);
     return;
   }
   const reviewEdges = data.edges.filter(edge => edge.review);
-  const displayEdges = (reviewEdges.length ? reviewEdges : data.edges).slice(0, 25);
+  const displayEdges = reviewEdges.length
+    ? [...reviewEdges, ...data.edges.filter(edge => !edge.review)]
+    : data.edges;
   for (const edge of displayEdges) {
     const item = document.createElement('div');
     item.className = `tree-item${edge.review ? ' review' : ''}`;
-    item.textContent = `${edge.parent_name} (PID ${edge.parent_pid}) -> ${edge.child_name} (PID ${edge.child_pid})`;
+    item.textContent = `${edge.parent_name} started ${edge.child_name}`;
     if (edge.reason) {
       const note = document.createElement('small');
-      note.textContent = `${edge.reason} This is a review alert, not a verdict.`;
+      note.textContent = 'This can be normal. Check whether you expected this app to start.';
       item.appendChild(note);
     }
     container.appendChild(item);
-  }
-  if (data.edges.length > displayEdges.length) {
-    const note = document.createElement('p');
-    note.className = 'password-state';
-    note.textContent = `Showing ${displayEdges.length} of ${data.edges.length} relationships.`;
-    container.appendChild(note);
   }
 }
 
@@ -647,51 +666,15 @@ function renderRiskSummary(data) {
   if (!data || typeof data.score !== 'number' || !Array.isArray(data.signals)) {
     throw new Error('The review-priority response is invalid.');
   }
-  document.getElementById('riskLevel').textContent =
-    `${String(data.level || 'normal').toUpperCase()} (${data.score}/100)`;
+  document.getElementById('riskLevel').textContent = ({
+    normal: 'No recent warning signs',
+    guarded: 'A few things to review',
+    elevated: 'Several things to review',
+    high: 'Many recent warning signs',
+  })[data.level] || 'Unable to summarize';
   document.getElementById('riskDetails').textContent = data.signals.length
-    ? `${data.signals.map(signal => signal.label).join('; ')}. ${data.explanation}`
-    : `No recognized alerts in the last ${data.window_minutes} minutes. ${data.explanation}`;
-}
-
-async function refreshAssistantModels() {
-  const refreshButton = document.getElementById('refreshAssistantModels');
-  const previousModel = assistantModel.value;
-  refreshButton.disabled = true;
-  assistantStatus.textContent = 'Checking local Ollama...';
-  sendAssistantQuestion.disabled = true;
-  try {
-    const data = await requestJson('/api/assistant/status');
-    if (!Array.isArray(data.models) || typeof data.message !== 'string') {
-      throw new Error('The local assistant status response is invalid.');
-    }
-    assistantModel.replaceChildren();
-    for (const modelName of data.models) {
-      const option = document.createElement('option');
-      option.value = modelName;
-      option.textContent = modelName;
-      assistantModel.appendChild(option);
-    }
-    if (data.models.length) {
-      assistantModel.value = data.models.includes(previousModel) ? previousModel : data.models[0];
-      assistantModel.disabled = false;
-      sendAssistantQuestion.disabled = false;
-    } else {
-      const option = document.createElement('option');
-      option.value = '';
-      option.textContent = 'No local models available';
-      assistantModel.appendChild(option);
-      assistantModel.value = '';
-      assistantModel.disabled = true;
-    }
-    assistantStatus.textContent = data.message;
-  } catch (error) {
-    assistantModel.replaceChildren();
-    assistantModel.disabled = true;
-    assistantStatus.textContent = `Local assistant status unavailable: ${error.message}`;
-  } finally {
-    refreshButton.disabled = false;
-  }
+    ? `Based on ${data.signals.length} type${data.signals.length === 1 ? '' : 's'} of alerts in the last ${data.window_minutes} minutes. This is not a diagnosis.`
+    : `No matching alerts in the last ${data.window_minutes} minutes. This does not prove the computer is safe.`;
 }
 
 function appendAssistantMessage(role, content) {
@@ -709,34 +692,22 @@ async function sendAssistantChat(event) {
     assistantStatus.textContent = 'Type a question before sending.';
     return;
   }
-  if (!assistantModel.value) {
-    assistantStatus.textContent = 'Select an installed local model first.';
-    return;
-  }
-
-  const model = assistantModel.value;
-  const history = assistantHistory.slice(-8);
   appendAssistantMessage('user', question);
   assistantQuestion.value = '';
   sendAssistantQuestion.disabled = true;
-  assistantStatus.textContent = 'Waiting for the local model...';
+  assistantStatus.textContent = 'Looking up built-in guidance...';
   try {
     const result = await requestJson('/api/assistant/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, message: question, history }),
+      body: JSON.stringify({ message: question }),
     });
     appendAssistantMessage('assistant', result.answer);
-    assistantHistory.push(
-      { role: 'user', content: question },
-      { role: 'assistant', content: result.answer },
-    );
-    if (assistantHistory.length > 8) assistantHistory.splice(0, assistantHistory.length - 8);
-    assistantStatus.textContent = `Answered by local model ${result.model}. Verify important security advice before acting.`;
+    assistantStatus.textContent = 'Morpheus Offline Helper replied. Check important advice before acting.';
   } catch (error) {
-    assistantStatus.textContent = `Local assistant request failed: ${error.message}`;
+    assistantStatus.textContent = `Could not send your question: ${error.message}`;
   } finally {
-    sendAssistantQuestion.disabled = !assistantModel.value;
+    sendAssistantQuestion.disabled = false;
   }
 }
 
@@ -778,14 +749,14 @@ async function refreshDashboard(includeFirewall = false) {
   if (includeFirewall || !firewallRulesLoaded) loadFirewallRules();
   document.getElementById('eventCount').textContent = String(status.event_count);
   document.getElementById('toolCatalogCount').textContent = String(status.tool_watch.catalog_entries);
-  document.getElementById('monitoringState').textContent = status.monitoring.running ? 'RUNNING' : 'STOPPED';
+  document.getElementById('monitoringState').textContent = status.monitoring.running ? 'On' : 'Off';
   document.getElementById('monitoringState').classList.toggle('severity-critical', !status.monitoring.running);
   document.getElementById('lastScanTime').textContent = status.monitoring.last_scan_at
     ? `Last scan: ${new Date(status.monitoring.last_scan_at).toLocaleTimeString()}`
     : status.monitoring.last_error ? 'Last background scan failed' : 'Waiting for first scan';
-  document.getElementById('downloadMonitorState').textContent = status.monitoring.downloads_enabled ? 'Downloads: ON' : 'Downloads: OFF';
+  document.getElementById('downloadMonitorState').textContent = status.monitoring.downloads_enabled ? 'Download checks: On' : 'Download checks: Off';
   downloadDirectoryPath.value = status.monitoring.download_directory || '';
-  document.getElementById('quarantineState').textContent = status.config.automatic_quarantine ? 'ON' : 'OFF';
+  document.getElementById('quarantineState').textContent = status.config.automatic_quarantine ? 'On' : 'Off';
   document.getElementById('automaticQuarantine').checked = Boolean(status.config.automatic_quarantine);
   downloadMonitoring.checked = Boolean(status.config.download_monitoring);
   quarantineDownloads.checked = Boolean(status.config.automatic_quarantine_downloads);
@@ -820,8 +791,11 @@ async function runScan() {
     const result = await requestJson('/api/scan', { method: 'POST' });
     if (!Array.isArray(result.detected)) throw new Error('The scan response did not include detection results.');
     const count = result.detected.length;
+    const checked = Number.isInteger(result.processes_checked) ? result.processes_checked : null;
     setScanStatus(
-      count ? `Scan complete. ${count} detection${count === 1 ? '' : 's'} recorded.` : 'Scan complete. No detections in this process snapshot.',
+      count
+        ? `Checked ${checked === null ? 'running apps' : `${checked} running apps`}. Found ${count} alert${count === 1 ? '' : 's'} to review.`
+        : `Checked ${checked === null ? 'the running apps' : `${checked} running apps`}. No warning signs were found. Files were not checked.`,
       count ? 'warning' : 'complete'
     );
     try {
@@ -894,7 +868,7 @@ async function scanFolderPath(path) {
   fileScanButton.disabled = true;
   browseFileButton.disabled = true;
   browseFolderButton.disabled = true;
-  document.getElementById('reviewCodeButton').disabled = true;
+  setCodeReviewButtonsDisabled(true);
   document.getElementById('scanPath').value = path;
   clearFolderResults();
   scanResult.textContent = 'Scanning selected folder locally. Windows system locations are excluded...';
@@ -907,16 +881,16 @@ async function scanFolderPath(path) {
     showFolderResults(data.results, data.failures);
     const flagged = data.results.filter(result => Array.isArray(result.reasons) && result.reasons.length).length;
     scanResult.textContent =
-      `Morpheus checked ${data.results.length} files. It noticed patterns in ${flagged}; this does not mean they are infected. ` +
-      `${data.skipped_system_paths} protected system paths skipped${data.failures.length ? `, ${data.failures.length} failed` : ''}. ` +
-      `These heuristic notes are not a malware verdict.${data.message ? ` ${data.message}` : ''}`;
+      `Checked ${data.results.length} files. ${flagged} had warning signs; this does not mean they are infected. ` +
+      `${data.skipped_system_paths} protected Windows locations were skipped${data.failures.length ? `; ${data.failures.length} files could not be checked` : ''}. ` +
+      `A clean result does not guarantee every file is safe.${data.message ? ` ${data.message}` : ''}`;
   } catch (error) {
     scanResult.textContent = `Folder scan failed: ${error.message}`;
   } finally {
     fileScanButton.disabled = false;
     browseFileButton.disabled = false;
     browseFolderButton.disabled = false;
-    document.getElementById('reviewCodeButton').disabled = false;
+    setCodeReviewButtonsDisabled(false);
   }
 }
 
@@ -929,9 +903,9 @@ async function analyzeFilePath() {
   fileScanButton.disabled = true;
   browseFileButton.disabled = true;
   browseFolderButton.disabled = true;
-  document.getElementById('reviewCodeButton').disabled = true;
+  setCodeReviewButtonsDisabled(true);
   clearFolderResults();
-  scanResult.textContent = 'Analyzing file...';
+  scanResult.textContent = 'Checking the whole file. Large files may take longer; please keep Morpheus open...';
   try {
     const result = await requestJson('/api/scan-file', {
       method: 'POST',
@@ -941,15 +915,15 @@ async function analyzeFilePath() {
     showFolderResults([result], []);
     const noted = Array.isArray(result.reasons) ? result.reasons.length : 0;
     scanResult.textContent = noted
-      ? `Morpheus noticed ${noted} pattern${noted === 1 ? '' : 's'}. This is not a malware verdict; read the plain-language note below.`
-      : 'Morpheus found no known warning patterns. This is not a guarantee that the file is safe.';
+      ? `Found ${noted} warning sign${noted === 1 ? '' : 's'}. This does not prove the file is harmful; see the explanation below.`
+      : 'No known warning signs were found. This does not guarantee the file is safe.';
   } catch (error) {
     scanResult.textContent = `Analysis failed: ${error.message}`;
   } finally {
     fileScanButton.disabled = false;
     browseFileButton.disabled = false;
     browseFolderButton.disabled = false;
-    document.getElementById('reviewCodeButton').disabled = false;
+    setCodeReviewButtonsDisabled(false);
   }
 }
 
@@ -957,7 +931,7 @@ function showCodeReviewResults(data) {
   const table = document.createElement('table');
   const head = document.createElement('thead');
   const header = document.createElement('tr');
-  for (const label of ['Severity', 'File', 'Line', 'Finding', 'Suggested fix']) {
+  for (const label of ['Reviewer', 'Severity', 'File', 'Line', 'Finding', 'Details', 'Suggested fix']) {
     const cell = document.createElement('th');
     cell.textContent = label;
     header.appendChild(cell);
@@ -967,10 +941,12 @@ function showCodeReviewResults(data) {
   for (const finding of data.findings) {
     const row = document.createElement('tr');
     for (const value of [
+      finding.reviewer || 'Morpheus rules',
       String(finding.severity || 'review').toUpperCase(),
       finding.path,
       String(finding.line),
       finding.title,
+      finding.explanation || 'Matched a local review rule.',
       finding.remediation,
     ]) {
       const cell = document.createElement('td');
@@ -982,7 +958,7 @@ function showCodeReviewResults(data) {
   for (const failure of data.failures) {
     const row = document.createElement('tr');
     const cell = document.createElement('td');
-    cell.colSpan = 5;
+    cell.colSpan = 7;
     cell.textContent = `${failure.path}: ${failure.message}`;
     row.appendChild(cell);
     body.appendChild(row);
@@ -990,7 +966,7 @@ function showCodeReviewResults(data) {
   if (!data.findings.length && !data.failures.length) {
     const row = document.createElement('tr');
     const cell = document.createElement('td');
-    cell.colSpan = 5;
+    cell.colSpan = 7;
     cell.textContent = 'No findings from the current rules. This does not prove the code is secure.';
     row.appendChild(cell);
     body.appendChild(row);
@@ -1005,13 +981,12 @@ async function reviewSourceCode() {
     scanResult.textContent = 'Choose a source-code file or folder, or enter its full path first.';
     return;
   }
-  const button = document.getElementById('reviewCodeButton');
-  button.disabled = true;
+  setCodeReviewButtonsDisabled(true);
   fileScanButton.disabled = true;
   browseFileButton.disabled = true;
   browseFolderButton.disabled = true;
   clearFolderResults();
-  scanResult.textContent = 'Reviewing selected source code with Morpheus local rules...';
+  scanResult.textContent = 'Reviewing selected source code with Morpheus offline rules...';
   try {
     const result = await requestJson('/api/review-code', {
       method: 'POST',
@@ -1021,11 +996,11 @@ async function reviewSourceCode() {
     showCodeReviewResults(result);
     scanResult.textContent =
       `Reviewed ${result.files_scanned} source file${result.files_scanned === 1 ? '' : 's'} with ${result.ruleset}; found ${result.findings.length} finding${result.findings.length === 1 ? '' : 's'}. ` +
-      `Rules are heuristic, can miss issues, and are not a security certification.${result.truncated ? ' Review stopped at a configured limit.' : ''}`;
+      `Reviews are heuristic, can miss issues, and are not a security certification.${result.failures.length ? ` ${result.failures.length} source files could not be checked; see the list below.` : ''}`;
   } catch (error) {
     scanResult.textContent = `Code review failed: ${error.message}`;
   } finally {
-    button.disabled = false;
+    setCodeReviewButtonsDisabled(false);
     fileScanButton.disabled = false;
     browseFileButton.disabled = false;
     browseFolderButton.disabled = false;
@@ -1034,27 +1009,12 @@ async function reviewSourceCode() {
 
 async function scanFolder(files) {
   if (!files.length) return;
-  if (files.length > maxFolderFiles) {
-    scanResult.textContent = `Folder contains ${files.length} files; the limit is ${maxFolderFiles}. Choose a smaller folder.`;
-    return;
-  }
-  const totalBytes = files.reduce((total, file) => total + file.size, 0);
-  if (totalBytes > maxFolderBytes) {
-    scanResult.textContent = 'Folder exceeds the 30 GB total scan limit. Choose a smaller folder.';
-    return;
-  }
-  const oversized = files.filter(file => file.size > maxFileBytes);
-  if (oversized.length) {
-    scanResult.textContent = `${oversized.length} file${oversized.length === 1 ? '' : 's'} exceed the 100 MB per-file limit. Remove them or choose a smaller folder.`;
-    return;
-  }
-
   const results = [];
   const failures = [];
   fileScanButton.disabled = true;
   browseFileButton.disabled = true;
   browseFolderButton.disabled = true;
-  document.getElementById('reviewCodeButton').disabled = true;
+  setCodeReviewButtonsDisabled(true);
   clearFolderResults();
   try {
     for (let index = 0; index < files.length; index += 1) {
@@ -1071,7 +1031,7 @@ async function scanFolder(files) {
     }
     showFolderResults(results, failures);
     const flagged = results.filter(result => Array.isArray(result.reasons) && result.reasons.length).length;
-    scanResult.textContent = `Morpheus checked ${results.length} files and noticed patterns in ${flagged}. These notes are heuristic and are not a malware verdict.${failures.length ? ` ${failures.length} files could not be checked.` : ''}`;
+    scanResult.textContent = `Checked ${results.length} files and found warning signs in ${flagged}. This is not a virus verdict.${failures.length ? ` ${failures.length} files could not be checked.` : ''}`;
   } catch (error) {
     showFolderResults(results, failures);
     scanResult.textContent = `Folder scan stopped: ${error.message} Scanned ${results.length} of ${files.length} files.`;
@@ -1080,13 +1040,13 @@ async function scanFolder(files) {
     fileScanButton.disabled = false;
     browseFileButton.disabled = false;
     browseFolderButton.disabled = false;
-    document.getElementById('reviewCodeButton').disabled = false;
+    setCodeReviewButtonsDisabled(false);
     folderInput.value = '';
   }
 }
 
 fileScanButton.addEventListener('click', analyzeFilePath);
-document.getElementById('reviewCodeButton').addEventListener('click', reviewSourceCode);
+reviewCodeButton.addEventListener('click', () => reviewSourceCode());
 async function updateConfigFromToggle(toggle, change, errorLabel) {
   const previous = !toggle.checked;
   toggle.disabled = true;
@@ -1099,7 +1059,7 @@ async function updateConfigFromToggle(toggle, change, errorLabel) {
       headers,
       body: JSON.stringify(change(toggle.checked)),
     });
-    document.getElementById('quarantineState').textContent = config.automatic_quarantine ? 'ON' : 'OFF';
+    document.getElementById('quarantineState').textContent = config.automatic_quarantine ? 'On' : 'Off';
     downloadMonitoring.checked = Boolean(config.download_monitoring);
     quarantineDownloads.checked = Boolean(config.automatic_quarantine_downloads);
     document.getElementById('downloadMonitorState').textContent = config.download_monitoring ? 'Downloads: ON' : 'Downloads: OFF';
@@ -1414,14 +1374,12 @@ document.getElementById('settingsPasswordForm').addEventListener('submit', event
 });
 document.getElementById('addFirewallRuleButton').addEventListener('click', addFirewallRule);
 document.getElementById('startFirewallWorkerButton').addEventListener('click', startFirewallService);
-document.getElementById('refreshAssistantModels').addEventListener('click', refreshAssistantModels);
 assistantForm.addEventListener('submit', sendAssistantChat);
 
 runScanButton.addEventListener('click', runScan);
 scanPanelButton.addEventListener('click', runScan);
 refreshButton.addEventListener('click', () => refresh(true));
 refresh();
-refreshAssistantModels();
 setInterval(() => {
   if (!refreshButton.disabled) refresh();
 }, 10000);

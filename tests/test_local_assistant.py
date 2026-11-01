@@ -1,76 +1,30 @@
-import json
-from urllib.error import URLError
-
-import pytest
-
-from morpheus.local_assistant import LocalAssistant, LocalAssistantError
+from morpheus.local_assistant import OfflineAssistant
 
 
-class FakeResponse:
-    def __init__(self, value):
-        self.content = json.dumps(value).encode("utf-8")
+def test_offline_assistant_is_ready_without_external_model():
+    status = OfflineAssistant().status()
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_args):
-        return False
-
-    def read(self, _limit):
-        return self.content
+    assert status["available"] is True
+    assert status["ready"] is True
+    assert status["mode"] == "built-in offline helper"
+    assert "No Ollama" in status["message"]
 
 
-def test_local_chat_uses_loopback_and_never_uses_tools(monkeypatch):
-    requests = []
-
-    def fake_urlopen(request, timeout):
-        requests.append((request, timeout))
-        if request.full_url.endswith("/api/tags"):
-            return FakeResponse({"models": [{"name": "local-model:latest"}]})
-        return FakeResponse({"message": {"content": "Review the alert cautiously."}})
-
-    monkeypatch.setattr("morpheus.local_assistant.urlopen", fake_urlopen)
-    assistant = LocalAssistant()
-
-    result = assistant.chat(
-        "local-model:latest",
-        "What does this review alert mean?",
-        [{"role": "user", "content": "Help me understand the dashboard"}],
+def test_offline_assistant_explains_file_checks_and_antivirus_limits():
+    answer = OfflineAssistant().chat(
+        "Does this scan prove that my file has no virus?",
     )
 
-    assert result == "Review the alert cautiously."
-    assert len(requests) == 2
-    assert all(request.full_url.startswith("http://127.0.0.1:11434/") for request, _ in requests)
-    chat_body = json.loads(requests[1][0].data)
-    assert chat_body["stream"] is False
-    assert "tools" not in chat_body
-    assert chat_body["messages"][0]["role"] == "system"
-    assert chat_body["messages"][-1] == {
-        "role": "user",
-        "content": "What does this review alert mean?",
-    }
+    assert "not a full antivirus scan" in answer
+    assert "Microsoft Defender" in answer
 
 
-def test_status_explains_when_ollama_is_unavailable(monkeypatch):
-    monkeypatch.setattr(
-        "morpheus.local_assistant.urlopen",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(URLError("connection refused")),
+def test_offline_assistant_explains_common_topics_and_unknown_questions():
+    assistant = OfflineAssistant()
+
+    assert "does not control another computer" in assistant.chat(
+        "What does the firewall do?"
     )
-
-    result = LocalAssistant().status()
-
-    assert result["available"] is False
-    assert result["models"] == []
-    assert "127.0.0.1:11434" in result["message"]
-
-
-def test_chat_rejects_model_not_installed_locally(monkeypatch):
-    monkeypatch.setattr(
-        "morpheus.local_assistant.urlopen",
-        lambda *_args, **_kwargs: FakeResponse({"models": [{"name": "known-model"}]}),
+    assert "not a general-purpose AI" in assistant.chat(
+        "Can you write a poem about space?"
     )
-
-    with pytest.raises(LocalAssistantError, match="installed in the local Ollama service") as exc:
-        LocalAssistant().chat("unlisted-model", "Question", [])
-
-    assert exc.value.status_code == 400

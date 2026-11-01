@@ -1,12 +1,11 @@
 import hashlib
+import io
 import math
 import os
 from collections import Counter
 from pathlib import Path
 
-MAX_SCAN_FILE_SIZE = 100 * 1024 * 1024
-MAX_FOLDER_SCAN_FILES = 10_000
-MAX_FOLDER_SCAN_BYTES = 30 * 1024 * 1024 * 1024
+SCAN_CHUNK_SIZE = 1024 * 1024
 PROTECTED_DIRECTORY_NAMES = {
     "$recycle.bin", "$winreagent", "boot", "config.msi", "efi",
     "msocache", "program files", "program files (x86)", "programdata",
@@ -90,29 +89,49 @@ class StaticScanner:
             raise ProtectedSystemPathError("Windows system and protected application files are excluded from file scans.")
         if not path.exists() or not path.is_file():
             raise FileNotFoundError(path)
+        with path.open("rb") as stream:
+            return self.scan_stream(stream, str(path), suffix=path.suffix.lower())
+
+    def scan_stream(self, stream, name: str, *, suffix: str | None = None) -> dict:
+        if has_protected_folder_name(name):
+            raise ProtectedSystemPathError("Windows system and protected application files are excluded from file scans.")
         digest = hashlib.sha256()
         entropy_counts = Counter()
-        entropy_size = 0
         sample = bytearray()
+        marker_bytes = (
+            b"virtualallocex",
+            b"writeprocessmemory",
+            b"powershell.exe",
+            b"cmd.exe /c",
+            b"create remotethread",
+        )
+        matched_markers = set()
+        overlap = b""
         size = 0
         try:
-            with path.open("rb") as stream:
-                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                    size += len(chunk)
-                    if size > MAX_SCAN_FILE_SIZE:
-                        limit_mb = MAX_SCAN_FILE_SIZE // (1024 * 1024)
-                        raise ValueError(f"File exceeds the {limit_mb} MB per-file scan limit.")
-                    digest.update(chunk)
-                    if entropy_size < 2_000_000:
-                        entropy_chunk = chunk[:2_000_000 - entropy_size]
-                        entropy_counts.update(entropy_chunk)
-                        entropy_size += len(entropy_chunk)
-                    if len(sample) < 10_000_000:
-                        sample.extend(chunk[:10_000_000 - len(sample)])
+            for chunk in iter(lambda: stream.read(SCAN_CHUNK_SIZE), b""):
+                size += len(chunk)
+                digest.update(chunk)
+                entropy_counts.update(chunk)
+                if len(sample) < 10_000_000:
+                    sample.extend(chunk[:10_000_000 - len(sample)])
+                searchable = overlap + chunk.lower()
+                matched_markers.update(
+                    marker for marker in marker_bytes if marker in searchable
+                )
+                overlap = searchable[-max(map(len, marker_bytes)):]
         except MemoryError as exc:
             raise OSError("Insufficient memory to scan this file.") from exc
-        value = self._entropy_from_counts(entropy_counts, entropy_size)
-        return self._result(str(path), path.suffix.lower(), size, value, digest.hexdigest(), bytes(sample).lower())
+        value = self._entropy_from_counts(entropy_counts, size)
+        return self._result(
+            name,
+            suffix if suffix is not None else Path(name).suffix.lower(),
+            size,
+            value,
+            digest.hexdigest(),
+            bytes(sample).lower(),
+            marker_count=len(matched_markers),
+        )
 
     def scan_folder(self, path: Path) -> dict:
         root = Path(path).resolve()
@@ -125,13 +144,17 @@ class StaticScanner:
         results = []
         failures = []
         skipped = 0
-        total_bytes = 0
-        visited_entries = 0
-        for current, directories, filenames in os.walk(root, followlinks=False):
+
+        def record_walk_error(error: OSError) -> None:
+            failures.append({
+                "name": str(getattr(error, "filename", None) or root),
+                "message": str(error),
+            })
+
+        for current, directories, filenames in os.walk(
+            root, followlinks=False, onerror=record_walk_error
+        ):
             current_path = Path(current).resolve()
-            visited_entries += len(directories) + len(filenames)
-            if visited_entries > MAX_FOLDER_SCAN_FILES * 2:
-                return self._folder_result(results, failures, skipped, "Folder scan stopped at the 10,000-file limit.")
             retained_directories = []
             for directory in directories:
                 candidate_directory = current_path / directory
@@ -149,16 +172,7 @@ class StaticScanner:
                 ):
                     skipped += 1
                     continue
-                if len(results) + len(failures) >= MAX_FOLDER_SCAN_FILES:
-                    return self._folder_result(results, failures, skipped, "Folder scan stopped at the 10,000-file limit.")
                 try:
-                    size = candidate.stat().st_size
-                    if size > MAX_SCAN_FILE_SIZE:
-                        failures.append({"name": str(candidate), "message": "File exceeds the 100 MB per-file scan limit."})
-                        continue
-                    if total_bytes + size > MAX_FOLDER_SCAN_BYTES:
-                        return self._folder_result(results, failures, skipped, "Folder scan stopped at the 30 GB total scan limit.")
-                    total_bytes += size
                     results.append(self.scan_file(candidate, protected_roots=system_roots))
                 except (OSError, ValueError) as exc:
                     failures.append({"name": str(candidate), "message": str(exc)})
@@ -178,21 +192,7 @@ class StaticScanner:
         }
 
     def scan_bytes(self, content: bytes, name: str) -> dict:
-        if len(content) > MAX_SCAN_FILE_SIZE:
-            limit_mb = MAX_SCAN_FILE_SIZE // (1024 * 1024)
-            raise ValueError(f"File exceeds the {limit_mb} MB per-file scan limit.")
-        if has_protected_folder_name(name):
-            raise ProtectedSystemPathError("Windows system and protected application files are excluded from file scans.")
-        entropy_sample = content[:2_000_000]
-        value = self._entropy_from_counts(Counter(entropy_sample), len(entropy_sample))
-        return self._result(
-            name,
-            Path(name).suffix.lower(),
-            len(content),
-            value,
-            hashlib.sha256(content).hexdigest(),
-            content[:10_000_000].lower(),
-        )
+        return self.scan_stream(io.BytesIO(content), name)
 
     @staticmethod
     def _entropy_from_counts(counts: Counter, sample_size: int) -> float:
@@ -204,7 +204,16 @@ class StaticScanner:
         )
 
     @staticmethod
-    def _result(name: str, suffix: str, size: int, value: float, digest: str, sample: bytes) -> dict:
+    def _result(
+        name: str,
+        suffix: str,
+        size: int,
+        value: float,
+        digest: str,
+        sample: bytes,
+        *,
+        marker_count: int | None = None,
+    ) -> dict:
         score = 0.0
         reasons = []
         if suffix in {".exe", ".dll", ".scr", ".com", ".ps1", ".js", ".vbs", ".hta"}:
@@ -217,7 +226,8 @@ class StaticScanner:
             score += 0.20
             reasons.append("implausibly_small_native_file")
         suspicious_markers = (b"virtualallocex", b"writeprocessmemory", b"powershell.exe", b"cmd.exe /c", b"create remotethread")
-        marker_count = sum(marker in sample for marker in suspicious_markers)
+        if marker_count is None:
+            marker_count = sum(marker in sample for marker in suspicious_markers)
         if marker_count:
             score += min(marker_count * 0.12, 0.48)
             reasons.append("suspicious_native_marker")

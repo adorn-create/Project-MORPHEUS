@@ -49,6 +49,20 @@ def test_code_review_folder_only_reviews_source_files(tmp_path):
     assert [finding["rule_id"] for finding in result["findings"]] == ["unsafe-html"]
 
 
+def test_code_review_streams_large_files_without_a_per_file_size_limit(tmp_path):
+    source = tmp_path / "large.py"
+    prior_lines = 500_000
+    with source.open("w", encoding="utf-8", newline="") as output:
+        output.write("pass\n" * prior_lines)
+        output.write("eval(user_input)\n")
+    result = CodeReview().review_path(source)
+
+    assert source.stat().st_size > 2 * 1024 * 1024
+    assert result["files_scanned"] == 1
+    assert result["findings"][0]["rule_id"] == "dynamic-evaluation"
+    assert result["findings"][0]["line"] == prior_lines + 1
+
+
 def test_code_review_rejects_protected_system_path(tmp_path, monkeypatch):
     protected = tmp_path / "Windows"
     protected.mkdir()

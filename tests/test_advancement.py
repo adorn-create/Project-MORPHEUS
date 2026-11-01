@@ -1,6 +1,7 @@
 import sqlite3
 import threading
 
+import Advancement
 from scapy.all import ARP, DNS, DNSQR, Ether, IP, UDP
 
 from Advancement import ComprehensiveReviewSystem, shannon_entropy
@@ -85,6 +86,33 @@ def test_entropy_and_command_pattern_edge_cases():
     assert finding is not None
     assert "hidden_window" in finding[0]
     assert finding[1]
+
+
+def test_process_host_snapshot_checks_every_running_process(tmp_path, monkeypatch):
+    system = ComprehensiveReviewSystem(
+        db_name=tmp_path / "ledger.db",
+        canary_dir=tmp_path / "canaries",
+    )
+    visited = 0
+
+    class Process:
+        def __init__(self, pid):
+            self.info = {
+                "pid": pid,
+                "name": "notepad.exe",
+                "cmdline": ["notepad.exe"],
+            }
+
+    def process_iter(_fields):
+        nonlocal visited
+        for pid in range(1, 5002):
+            visited += 1
+            yield Process(pid)
+
+    monkeypatch.setattr(Advancement.psutil, "process_iter", process_iter)
+
+    assert system.process_host_snapshot() == []
+    assert visited == 5001
 
 
 def test_dns_packet_review_alerts_on_high_entropy_label_without_storing_name(tmp_path):

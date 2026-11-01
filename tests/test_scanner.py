@@ -10,18 +10,36 @@ def test_static_scanner(tmp_path):
     assert "executable_or_script_type" in result["reasons"]
 
 
-def test_static_scanner_rejects_files_over_limit(tmp_path):
+def test_static_scanner_reads_large_files_and_checks_markers_past_100_mb(tmp_path):
     sample = tmp_path / "large.bin"
     with sample.open("wb") as stream:
         stream.seek(100 * 1024 * 1024)
-        stream.write(b"x")
+        stream.write(b"powershell.exe")
 
-    try:
-        StaticScanner().scan_file(sample)
-    except ValueError as exc:
-        assert "100 MB" in str(exc)
-    else:
-        raise AssertionError("Oversized file was not rejected")
+    result = StaticScanner().scan_file(sample)
+
+    assert result["size"] > 100 * 1024 * 1024
+    assert "suspicious_native_marker" in result["reasons"]
+
+
+def test_static_scanner_reads_large_stream_without_loading_it_all():
+    class LargeStream:
+        def __init__(self):
+            self.remaining = 100 * 1024 * 1024 + len(b"powershell.exe")
+
+        def read(self, size):
+            if not self.remaining:
+                return b""
+            length = min(size, self.remaining)
+            self.remaining -= length
+            if not self.remaining:
+                return b"powershell.exe"
+            return b"x" * length
+
+    result = StaticScanner().scan_stream(LargeStream(), "large.bin")
+
+    assert result["size"] == 100 * 1024 * 1024 + len(b"powershell.exe")
+    assert "suspicious_native_marker" in result["reasons"]
 
 
 def test_static_scanner_rejects_protected_system_paths(tmp_path, monkeypatch):

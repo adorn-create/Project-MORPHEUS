@@ -7,10 +7,12 @@ Desktop dashboard
 - F11 toggles fullscreen; Escape exits fullscreen. The shortcut has no
   on-screen button.
 - Live dashboard status, recent detections, and ATT&CK-mapped timeline.
-- Optional Ollama-powered local chat assistant for explaining alerts and
-  Morpheus features. It has no tools and cannot make changes to the device.
-- Assistant requests go only to the local Ollama service; Morpheus does not
-  save chat history or install/download models.
+- Built-in offline helper with prepared answers about common alerts and
+  Morpheus features; it does not need Ollama, model downloads, or internet.
+- The helper is not a generative AI and cannot answer every question or take
+  actions on the device.
+- Offline source-code review applies Morpheus's deterministic rules to supported
+  files; source text is not sent to an AI service.
 - Run a process activity scan and refresh the displayed data.
 - System tray controls, minimize-to-tray behavior, and optional startup at
   Windows sign-in.
@@ -41,6 +43,8 @@ Device and process monitoring
   Morpheus's own data folder and alerts if they change or disappear.
 - An explainable 15-minute review-priority score combines distinct recent
   alert types; it is not a probability or malware verdict.
+- The process behavior scorer uses fixed, hand-set weights. It is fast and
+  explainable, but it is not trained machine learning and is not a virus verdict.
 - The separate `Advancement.py` script supports opt-in, single-interface
   passive DNS/ARP review using a DNS/ARP-only packet filter. Packet storage is
   disabled; DNS names are hashed before alert logging. This script is not part
@@ -51,13 +55,14 @@ File and download analysis
 - Analyze a selected file or browse a folder using local static-analysis
   heuristics, including SHA-256 and entropy. Results are shown as plain-language
   notes; a heuristic score is not a probability or malware verdict.
-- Run Morpheus's local, deterministic source-code review rules on selected
-  source files or folders. Findings include severity, line number, and
-  suggested remediation; source text is not uploaded or stored.
-- Source-code review is heuristic and limited to 2 MB per file, 2,000
-  candidate files, and 100 MB total. It is not a full secure-code audit.
-- Folder scans skip protected system locations and are limited to 10,000 files,
-  30 GB total, and 100 MB per file.
+- Run Morpheus's deterministic source-code rules entirely on this computer;
+  no external model service is contacted.
+- Findings include reviewer, severity, line number, explanation, and suggested
+  remediation. Rule matches can be wrong or incomplete.
+- Source-code review is heuristic and reads files in bounded chunks; it has no
+  configured file-size, folder-size, or file-count limit.
+- File scans read files in bounded chunks and have no configured file-size,
+  folder-size, or file-count limit. Protected Windows locations are skipped.
 - Optional monitoring of new executable/script downloads in the top level of
   a user-selected folder, including folders on another drive.
 - Optional automatic quarantine of high-confidence process detections and

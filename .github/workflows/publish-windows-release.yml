@@ -1,0 +1,64 @@
+name: Publish Windows installer
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -e ".[build]" pytest
+          npm ci
+      - name: Verify the release
+        shell: pwsh
+        run: |
+          python -m pytest
+          npm.cmd run test:ui
+      - name: Build Windows installer
+        shell: pwsh
+        run: npm.cmd run build:win
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $expectedVersion = node -p "require('./package.json').version"
+          $tagVersion = $env:GITHUB_REF_NAME.TrimStart('v')
+          if ($tagVersion -ne $expectedVersion) {
+            throw "Release tag $env:GITHUB_REF_NAME does not match package version $expectedVersion."
+          }
+          $installer = Get-ChildItem -Path dist -Filter 'Morpheus Defense Setup *.exe' |
+            Select-Object -First 1
+          if (-not $installer) {
+            throw 'The Windows installer was not produced.'
+          }
+          gh release create $env:GITHUB_REF_NAME "$($installer.FullName)" `
+            --title "Morpheus Defense $env:GITHUB_REF_NAME" `
+            --generate-notes `
+            --verify-tag

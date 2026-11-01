@@ -67,9 +67,8 @@ const ids = [
   'dnsEntropyMonitoring', 'powershellLogMonitoring', 'processTreeMonitoring',
   'canaryMonitoring', 'dnsMonitorStatus', 'powershellMonitorStatus',
   'canaryMonitorStatus', 'processTree', 'riskLevel', 'riskDetails',
-  'assistantModel', 'assistantStatus', 'assistantConversation',
+  'assistantStatus', 'assistantConversation',
   'assistantForm', 'assistantQuestion', 'sendAssistantQuestion',
-  'refreshAssistantModels',
   'downloadDirectoryPath', 'browseDownloadFolderButton',
   'eventCount', 'monitoringState', 'lastScanTime', 'downloadMonitorState',
   'quarantineState', 'toolCatalogCount', 'settingsPasswordState',
@@ -84,6 +83,13 @@ const calls = [];
 let passwordConfigured = false;
 let workerAvailable = false;
 let refreshTimer = null;
+let eventsData = [];
+let processTreeData = {
+  nodes: [{ pid: 10, parent_pid: 1, name: 'explorer.exe' }],
+  edges: [],
+  total_processes: 1,
+  truncated: false,
+};
 let config = {
   automatic_quarantine: false,
   download_monitoring: false,
@@ -109,15 +115,10 @@ async function fetch(url, options = {}) {
   const method = options.method || 'GET';
   calls.push({ url, method, options });
   if (url === '/api/events' || url === '/api/timeline') {
-    return response([]);
+    return response(url === '/api/events' ? eventsData : []);
   }
   if (url === '/api/process-tree') {
-    return response({
-      nodes: [{ pid: 10, parent_pid: 1, name: 'explorer.exe' }],
-      edges: [],
-      total_processes: 1,
-      truncated: false,
-    });
+    return response(processTreeData);
   }
   if (url === '/api/risk') {
     return response({
@@ -138,14 +139,14 @@ async function fetch(url, options = {}) {
     return response({
       available: true,
       ready: true,
-      models: ['local-test-model'],
-      message: 'Local Ollama is ready.',
+      models: ['morpheus-offline-v1'],
+      message: 'Morpheus built-in offline helper is ready.',
     });
   }
   if (url === '/api/assistant/chat' && method === 'POST') {
     return response({
-      model: 'local-test-model',
-      answer: 'Review the alert and verify the process source.',
+      model: 'Morpheus offline helper',
+      answer: 'An alert is a warning to review, not proof of infection.',
     });
   }
   if (url === '/api/status') {
@@ -176,18 +177,20 @@ async function fetch(url, options = {}) {
       path: JSON.parse(options.body).path,
       files_scanned: 1,
       findings: [{
+        reviewer: 'Morpheus rules',
         severity: 'high',
         path: 'sample.py',
         line: 4,
         title: 'Potential hard-coded credential',
+        explanation: 'A credential may be embedded in the code.',
         remediation: 'Move credentials to protected configuration.',
       }],
       failures: [],
       truncated: false,
-      ruleset: 'Morpheus local rules v1',
+      ruleset: 'Morpheus offline code rules v1',
     });
   }
-  if (url === '/api/scan' && method === 'POST') return response({ detected: [] });
+  if (url === '/api/scan' && method === 'POST') return response({ detected: [], processes_checked: 42 });
   if (url === '/api/scan-file' && method === 'POST') {
     return response({ path: 'sample.exe', size: 2, confidence: 0, reasons: [] });
   }
@@ -259,18 +262,48 @@ async function main() {
 
   await elements.get('scanPanelButton').dispatch('click');
   assert.equal(calls.filter(call => call.url === '/api/scan').length, 2);
-  assert.ok(calls.some(call => call.url === '/api/assistant/status'));
-  assert.equal(elements.get('assistantModel').value, 'local-test-model');
+  assert.match(elements.get('scanStatus').textContent, /Checked 42 running apps/);
+  assert.equal(calls.some(call => call.url === '/api/assistant/status'), false);
   elements.get('assistantQuestion').value = 'What does this alert mean?';
   await elements.get('assistantForm').dispatch('submit', { preventDefault() {} });
-  assert.ok(calls.some(call => call.url === '/api/assistant/chat' && call.method === 'POST'));
-  assert.match(elements.get('assistantStatus').textContent, /Answered by local model/);
+  const assistantCall = calls.find(call => call.url === '/api/assistant/chat' && call.method === 'POST');
+  assert.ok(assistantCall);
+  assert.deepEqual(JSON.parse(assistantCall.options.body), { message: 'What does this alert mean?' });
+  assert.match(elements.get('assistantStatus').textContent, /Offline Helper replied/i);
   assert.equal(
     elements.get('assistantConversation').children.at(-1).textContent,
-    'Review the alert and verify the process source.'
+    'An alert is a warning to review, not proof of infection.'
   );
 
   await elements.get('refreshButton').dispatch('click');
+  processTreeData = {
+    nodes: [],
+    edges: Array.from({ length: 30 }, (_, index) => ({
+      parent_name: `parent-${index}`,
+      child_name: `child-${index}`,
+      review: false,
+    })),
+    total_processes: 31,
+    truncated: false,
+  };
+  await elements.get('refreshButton').dispatch('click');
+  assert.equal(elements.get('processTree').children.length, 31, 'all app relationships are shown');
+  eventsData = [{
+    kind: 'suspicious_process',
+    severity: 'medium',
+    source: 'example.exe',
+    target: 'local review',
+    evidence: JSON.stringify([{ description: 'A local warning pattern was matched.' }]),
+  }];
+  await elements.get('refreshButton').dispatch('click');
+  assert.equal(elements.get('eventsBody').children[0].children[4].textContent, 'A local warning pattern was matched.');
+  assert.doesNotMatch(elements.get('eventsBody').children[0].children[4].textContent, /\[object Object\]/);
+  processTreeData = {
+    nodes: [{ pid: 10, parent_pid: 1, name: 'explorer.exe' }],
+    edges: [],
+    total_processes: 1,
+    truncated: false,
+  };
   const firewallReadsAfterManualRefresh = calls.filter(
     call => call.url === '/api/firewall' && call.method === 'GET'
   ).length;
@@ -285,12 +318,14 @@ async function main() {
   elements.get('scanPath').value = 'C:\\Users\\Owner\\sample.exe';
   await elements.get('fileScanButton').dispatch('click');
   assert.ok(calls.some(call => call.url === '/api/scan-file' && call.method === 'POST'));
-  assert.match(elements.get('scanResult').textContent, /no known warning patterns/i);
+  assert.match(elements.get('scanResult').textContent, /no known warning signs/i);
   elements.get('scanPath').value = 'C:\\Users\\Owner\\sample.py';
   await elements.get('reviewCodeButton').dispatch('click');
-  assert.ok(calls.some(call => call.url === '/api/review-code' && call.method === 'POST'));
+  const codeReviewCall = calls.find(call => call.url === '/api/review-code' && call.method === 'POST');
+  assert.ok(codeReviewCall);
+  assert.deepEqual(JSON.parse(codeReviewCall.options.body), { path: 'C:\\Users\\Owner\\sample.py' });
   assert.match(elements.get('scanResult').textContent, /1 finding/);
-  assert.equal(elements.get('folderResults').children[0].children[1].children[0].children[0].textContent, 'HIGH');
+  assert.equal(elements.get('folderResults').children[0].children[1].children[0].children[1].textContent, 'HIGH');
 
   selectedFolder = 'C:\\Users\\Owner\\Documents';
   await elements.get('browseFolderButton').dispatch('click');
@@ -357,11 +392,11 @@ async function main() {
   elements.get('processTreeMonitoring').checked = false;
   await elements.get('processTreeMonitoring').dispatch('change');
   assert.ok(calls.some(call => call.url === '/api/config' && JSON.parse(call.options.body).process_tree_monitoring === false));
-  assert.match(elements.get('processTree').children[0].textContent, /1 processes/);
+  assert.match(elements.get('processTree').children[0].textContent, /1 running app/);
   elements.get('canaryMonitoring').checked = true;
   await elements.get('canaryMonitoring').dispatch('change');
   assert.ok(calls.some(call => call.url === '/api/config' && JSON.parse(call.options.body).canary_monitoring === true));
-  assert.equal(elements.get('riskLevel').textContent, 'NORMAL (0/100)');
+  assert.equal(elements.get('riskLevel').textContent, 'No recent warning signs');
 }
 
 main().then(() => {

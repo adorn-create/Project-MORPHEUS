@@ -20,8 +20,8 @@ from fastapi.templating import Jinja2Templates
 from .engine import DefenseEngine
 from .downloads import DownloadMonitor
 from .code_review import CodeReview
-from .local_assistant import LocalAssistant, LocalAssistantError
-from .scanner import MAX_SCAN_FILE_SIZE, ProtectedSystemPathError, StaticScanner
+from .local_assistant import OfflineAssistant
+from .scanner import ProtectedSystemPathError, StaticScanner
 from .sysmon import SysmonStatus
 from .timeline import AttackTimeline
 from .quarantine import QuarantineManager
@@ -54,7 +54,7 @@ if not CONFIG_PATH.exists():
 engine = DefenseEngine(DATA_ROOT, CONFIG_PATH)
 scanner = StaticScanner()
 code_reviewer = CodeReview()
-local_assistant = LocalAssistant()
+local_assistant = OfflineAssistant()
 download_monitor = DownloadMonitor(scanner, engine.quarantine, engine.db, engine.journal)
 sysmon = SysmonStatus()
 timeline = AttackTimeline(engine.db)
@@ -69,7 +69,6 @@ worker_thread: threading.Thread | None = None
 scan_lock = threading.Lock()
 last_scan_at: str | None = None
 last_scan_error: str | None = None
-MAX_UPLOAD_SIZE = MAX_SCAN_FILE_SIZE
 LOGGER = logging.getLogger(__name__)
 SETTINGS_PASSWORD_PATH = DATA_ROOT / "settings-password.json"
 PASSWORD_HASH_ITERATIONS = 600_000
@@ -128,7 +127,8 @@ def verify_journal():
 
 @app.post("/api/scan")
 def scan():
-    return {"detected": evaluate_processes()}
+    detected = evaluate_processes()
+    return {"detected": detected, "processes_checked": engine.last_process_count}
 
 @app.get("/api/timeline")
 def attack_timeline(limit: int = 200):
@@ -186,31 +186,16 @@ def assistant_status():
 
 @app.post("/api/assistant/chat")
 def assistant_chat(payload: AssistantChatRequest):
-    try:
-        answer = local_assistant.chat(
-            payload.model,
-            payload.message,
-            [message.model_dump() for message in payload.history],
-        )
-        return {"model": payload.model, "answer": answer}
-    except LocalAssistantError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    answer = local_assistant.chat(payload.message)
+    return {"model": "Morpheus offline helper", "answer": answer}
 
 @app.post("/api/scan-upload")
 def scan_upload(file: UploadFile = File(...)):
-    limit_mb = max(1, (MAX_UPLOAD_SIZE + 1024 * 1024 - 1) // (1024 * 1024))
-    if file.size is not None and file.size > MAX_UPLOAD_SIZE:
-        raise HTTPException(status_code=413, detail=f"File exceeds the {limit_mb} MB per-file scan limit.")
-    content = file.file.read(MAX_UPLOAD_SIZE + 1)
-    if len(content) > MAX_UPLOAD_SIZE:
-        raise HTTPException(status_code=413, detail=f"File exceeds the {limit_mb} MB per-file scan limit.")
     name = file.filename or "selected file"
     try:
-        return scanner.scan_bytes(content, name)
+        return scanner.scan_stream(file.file, name)
     except ProtectedSystemPathError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=413, detail=str(exc)) from exc
 
 @app.get("/api/sysmon")
 def sysmon_status():

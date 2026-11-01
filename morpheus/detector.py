@@ -6,19 +6,19 @@ from collections import Counter
 from pathlib import Path
 
 class OwnBehaviorModel:
-    """Small explainable local model. Replace weights after training; this is not a malware signature."""
-    def __init__(self):
-        self.weights = {
-            "unsigned_temp_executable": 0.34,
-            "many_remote_connections": 0.20,
-            "high_cpu": 0.16,
-            "new_executable": 0.12,
-            "unexpected_sensitive_connection": 0.13,
-        }
+    """Fast, fixed-weight local scorer; it is not trained and is not a malware signature."""
+
+    weights = (
+        ("unsigned_temp_executable", 0.34),
+        ("many_remote_connections", 0.20),
+        ("high_cpu", 0.16),
+        ("new_executable", 0.12),
+        ("unexpected_sensitive_connection", 0.13),
+    )
 
     def score(self, signals: dict) -> tuple[float, list[str]]:
         score, reasons = 0.0, []
-        for signal, weight in self.weights.items():
+        for signal, weight in self.weights:
             if signals.get(signal):
                 score += weight
                 reasons.append(signal)

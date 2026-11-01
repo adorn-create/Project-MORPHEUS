@@ -31,6 +31,7 @@ class DefenseEngine:
             "truncated": False,
             "total_processes": 0,
         }
+        self.last_process_count = 0
 
     def config(self):
         return json.loads(self.config_path.read_text(encoding="utf-8"))
@@ -41,6 +42,7 @@ class DefenseEngine:
         active_tool_processes = set()
         active_lolbin_processes = set()
         processes = snapshot_processes(config.get("excluded_processes", []))
+        self.last_process_count = len(processes)
         tree_enabled = config.get("process_tree_monitoring", True)
         if tree_enabled:
             self.latest_process_tree = process_tree_snapshot(processes)

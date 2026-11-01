@@ -8,9 +8,8 @@ from .scanner import (
     protected_system_roots,
 )
 
-MAX_CODE_FILE_SIZE = 2 * 1024 * 1024
-MAX_CODE_REVIEW_FILES = 2_000
-MAX_CODE_REVIEW_BYTES = 100 * 1024 * 1024
+CODE_REVIEW_CHUNK_CHARS = 16 * 1024
+RULE_SCAN_OVERLAP_CHARS = 2 * 1024
 CODE_EXTENSIONS = {
     ".c", ".cc", ".cpp", ".cs", ".go", ".h", ".hpp", ".java", ".js",
     ".jsx", ".kt", ".php", ".py", ".rb", ".rs", ".sh", ".sql", ".ts",
@@ -20,8 +19,6 @@ IGNORED_DIRECTORIES = {
     ".git", ".hg", ".svn", ".venv", "build", "dist", "node_modules",
     "packages", "vendor", "__pycache__",
 }
-MAX_FINDINGS = 500
-
 RULES = (
     (
         "hardcoded-credential",
@@ -136,7 +133,10 @@ RULES = (
 
 
 class CodeReview:
-    def review_path(self, path: str | Path) -> dict:
+    def review_path(
+        self,
+        path: str | Path,
+    ) -> dict:
         target = Path(path).expanduser()
         try:
             target = target.resolve(strict=True)
@@ -161,14 +161,13 @@ class CodeReview:
             "findings": findings,
             "failures": [],
             "truncated": False,
-            "ruleset": "Morpheus local rules v1",
+            "ruleset": self._ruleset(),
         }
 
     def _review_folder(self, root: Path) -> dict:
         roots = protected_system_roots()
         files_scanned = 0
-        candidates_seen = 0
-        total_bytes = 0
+
         findings = []
         failures = []
         truncated = False
@@ -202,27 +201,11 @@ class CodeReview:
                     continue
                 if candidate.is_symlink() or (hasattr(candidate, "is_junction") and candidate.is_junction()):
                     continue
-                if candidates_seen >= MAX_CODE_REVIEW_FILES:
-                    truncated = True
-                    break
-                candidates_seen += 1
                 try:
-                    size = candidate.stat().st_size
-                    if size > MAX_CODE_FILE_SIZE:
-                        failures.append({"path": str(candidate), "message": "File exceeds the 2 MB per-file code-review limit."})
-                        continue
-                    if total_bytes + size > MAX_CODE_REVIEW_BYTES:
-                        truncated = True
-                        break
-                    total_bytes += size
                     findings.extend(self._review_file(candidate))
                     files_scanned += 1
                 except (OSError, UnicodeError, ValueError) as exc:
                     failures.append({"path": str(candidate), "message": str(exc)})
-                if len(findings) >= MAX_FINDINGS:
-                    findings = findings[:MAX_FINDINGS]
-                    truncated = True
-                    break
             if truncated:
                 break
 
@@ -232,38 +215,54 @@ class CodeReview:
             "findings": findings,
             "failures": failures,
             "truncated": truncated,
-            "ruleset": "Morpheus local rules v1",
+            "ruleset": self._ruleset(),
         }
+
+    @staticmethod
+    def _ruleset() -> str:
+        return "Morpheus offline code rules v1"
 
     @staticmethod
     def _review_file(path: Path) -> list[dict]:
         try:
             with path.open("rb") as source:
-                content = source.read(MAX_CODE_FILE_SIZE + 1)
+                for chunk in iter(lambda: source.read(CODE_REVIEW_CHUNK_CHARS), b""):
+                    if b"\0" in chunk:
+                        raise ValueError("File appears to be binary and was not reviewed as source code.")
         except OSError:
             raise
-        if len(content) > MAX_CODE_FILE_SIZE:
-            raise ValueError("File exceeds the 2 MB per-file code-review limit.")
-        if b"\0" in content:
-            raise ValueError("File appears to be binary and was not reviewed as source code.")
 
         findings = []
-        for line_number, line in enumerate(content.decode("utf-8-sig", errors="replace").splitlines(), 1):
-            stripped = line.lstrip()
-            if stripped.startswith(("#", "//", "/*", "*", "--")):
-                continue
-            for rule_id, title, severity, pattern, remediation, extensions in RULES:
-                if path.suffix.casefold() not in extensions:
-                    continue
-                if pattern.search(line):
-                    findings.append({
-                        "rule_id": rule_id,
-                        "title": title,
-                        "severity": severity,
-                        "path": str(path),
-                        "line": line_number,
-                        "remediation": remediation,
-                    })
-                    if len(findings) >= MAX_FINDINGS:
-                        return findings
+        finding_keys = set()
+        line_number = 1
+        overlap = ""
+        try:
+            with path.open("r", encoding="utf-8-sig", errors="replace", newline="") as source:
+                while chunk := source.read(CODE_REVIEW_CHUNK_CHARS):
+                    scan_text = overlap + chunk
+                    scan_line_number = line_number - overlap.count("\n")
+                    for offset, line in enumerate(scan_text.splitlines(), 0):
+                        stripped = line.lstrip()
+                        if stripped.startswith(("#", "//", "/*", "*", "--")):
+                            continue
+                        for rule_id, title, severity, pattern, remediation, extensions in RULES:
+                            if path.suffix.casefold() not in extensions or not pattern.search(line):
+                                continue
+                            finding = {
+                                "rule_id": rule_id,
+                                "title": title,
+                                "severity": severity,
+                                "path": str(path),
+                                "line": scan_line_number + offset,
+                                "remediation": remediation,
+                                "reviewer": "Morpheus rules",
+                            }
+                            key = (finding["rule_id"], finding["line"])
+                            if key not in finding_keys:
+                                finding_keys.add(key)
+                                findings.append(finding)
+                    line_number += chunk.count("\n")
+                    overlap = scan_text[-RULE_SCAN_OVERLAP_CHARS:]
+        except OSError:
+            raise
         return findings

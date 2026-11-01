@@ -57,5 +57,8 @@
       "oneClick": false,
       "include": "build/installer.nsh"
     }
+  },
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1"
   }
 }
