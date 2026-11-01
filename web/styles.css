@@ -53,15 +53,11 @@ a:focus-visible {
 }
 
 .brand-mark {
-  display: grid;
+  display: block;
   width: 31px;
   height: 31px;
-  place-items: center;
-  border: 1px solid rgba(102, 165, 255, 0.55);
   border-radius: 9px;
-  color: #b7d5ff;
-  background: linear-gradient(145deg, rgba(102, 165, 255, 0.25), rgba(44, 80, 147, 0.12));
-  font: 800 17px "Manrope", sans-serif;
+  object-fit: cover;
 }
 
 .brand-light { color: #9aacc2; font-weight: 400; }
@@ -375,7 +371,7 @@ h1 {
 }
 
 .footer-brand { font-size: 10px; }
-.footer-brand .brand-mark { width: 26px; height: 26px; font-size: 14px; }
+.footer-brand .brand-mark { width: 26px; height: 26px; }
 
 @media (max-width: 820px) {
   .hero { grid-template-columns: 1fr; gap: 5px; padding-top: 60px; }
@@ -389,7 +385,7 @@ h1 {
   .site-header, main, .site-footer { width: min(100% - 36px, 1120px); }
   .site-header { height: 70px; }
   .brand { gap: 8px; font-size: 10px; }
-  .brand-mark { width: 27px; height: 27px; font-size: 15px; }
+  .brand-mark { width: 27px; height: 27px; }
   .header-links { gap: 15px; }
   .header-links a { font-size: 10px; }
   .header-links a:first-child { display: none; }

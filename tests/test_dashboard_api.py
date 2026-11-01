@@ -15,6 +15,7 @@ def test_dashboard_renders_background_monitoring_and_folder_picker():
     response = TestClient(main.app).get("/")
 
     assert response.status_code == 200
+    assert '<img class="brand-mark" src="/favicon.ico" alt="">' in response.text
     assert 'id="monitoringState"' in response.text
     assert 'id="automaticQuarantine"' in response.text
     assert 'id="folderInput"' in response.text

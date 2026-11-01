@@ -50,7 +50,7 @@ If you have the earlier per-user build installed, uninstall it before installing
 
 ### Download website
 
-The static download website is in `web/`. To publish it on Vercel, import this repository, set the root directory to `web`, choose the **Other** preset, and leave the build command empty. Enable Web Analytics in the Vercel project settings; the plain-HTML tracking script is in `web/index.html` (the `@vercel/analytics/next` component is for Next.js projects). GitHub Pages is also supported by the deployment workflow when it is available on the remote branch and Pages is configured to use GitHub Actions.
+The static download website is in `web/`. To publish it on Vercel, import this repository, set the root directory to `web`, choose the **Other** preset, and leave the build command empty. Enable Web Analytics in the Vercel project settings; the plain-HTML tracking script is in `web/index.html` (the `@vercel/analytics/next` component is for Next.js projects). GitHub Pages is also supported: first enable Pages under **Settings → Pages** and select **GitHub Actions** as the build source. The deployment workflow cannot publish until this repository setting exists.
 
 To publish a Windows download, update the app version in `package.json`, push a matching version tag (for example, `v0.1.0`), and allow the **Publish Windows installer** workflow to complete. It builds and tests the installer, then attaches it to a GitHub Release. The download website will then link directly to that installer.
 

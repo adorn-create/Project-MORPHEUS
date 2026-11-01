@@ -234,6 +234,8 @@ const window = {
 
 async function main() {
   const html = fs.readFileSync('morpheus/templates/dashboard.html', 'utf8');
+  const downloadSite = fs.readFileSync('web/index.html', 'utf8');
+  assert.match(downloadSite, /<img class="brand-mark" src="favicon\.svg" alt="">/);
   const start = html.indexOf('<script>');
   const end = html.indexOf('</script>', start);
   assert.notEqual(start, -1, 'dashboard script exists');
