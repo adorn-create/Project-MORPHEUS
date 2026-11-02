@@ -90,6 +90,9 @@ async function startBackend() {
       MORPHEUS_DATA_DIR: dataPath,
       MORPHEUS_CONFIG_PATH: configPath,
       MORPHEUS_WEBAUTHN_ORIGIN: backendUrl,
+      MORPHEUS_CLAMAV_DIR: app.isPackaged
+        ? path.join(process.resourcesPath, 'clamav')
+        : '',
     },
     stdio: ['ignore', logFile, logFile],
     windowsHide: true,

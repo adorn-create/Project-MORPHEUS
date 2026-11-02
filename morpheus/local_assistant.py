@@ -19,11 +19,13 @@ _INTENTS = (
     ),
     (
         ("clamav", "signature feed", "signature database", "freshclam"),
-        "Morpheus can use an installed ClamAV scanner and its signature database "
-        "for on-demand and selected-folder scans. Install ClamAV from its official "
-        "source and keep its database updated with FreshClam. Morpheus does not "
-        "bundle ClamAV or download signature databases. It does not automatically "
-        "quarantine ClamAV findings. A clean result is not proof that a file is safe.",
+        "The Windows installer includes the ClamAV scanner and FreshClam updater "
+        "for on-demand and selected-folder scans. After installing Morpheus, use "
+        "Update ClamAV signatures to download the initial database from its "
+        "official mirror; this requires internet access and passkey approval. "
+        "In development mode, install ClamAV separately. Morpheus does not "
+        "automatically quarantine ClamAV findings. A clean result is not proof "
+        "that a file is safe.",
     ),
     (
         ("defender", "antivirus protection", "real-time protection", "security health"),
@@ -58,8 +60,9 @@ _INTENTS = (
         "It does not control another computer. "
         "Separately, optional inbound scan protection can block a public IP after "
         "Windows Firewall logs dropped probes to 10 or more distinct local ports "
-        "within 60 seconds. It requires dropped-packet logging to be enabled by "
-        "the owner; it cannot identify Nmap or prove malicious intent. Use the "
+        "within 60 seconds. The installer offers an optional way to enable "
+        "dropped-packet logging; otherwise the owner must configure it manually. "
+        "It cannot identify Nmap or prove malicious intent. Use the "
         "alert's Allow this IP action to remove the block. A wrong block can "
         "interrupt network access.",
     ),

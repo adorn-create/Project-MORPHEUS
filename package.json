@@ -9,7 +9,8 @@
     "build:backend": "node scripts/build-backend.js",
     "build:firewall-worker": "node scripts/build-firewall-worker.js",
     "build:uninstall-helper": "node scripts/build-uninstall-helper.js",
-    "build:win": "npm run build:icons && npm run build:backend && npm run build:firewall-worker && npm run build:uninstall-helper && electron-builder --win nsis --publish never",
+    "build:clamav": "node scripts/build-clamav.js",
+    "build:win": "npm run build:icons && npm run build:backend && npm run build:firewall-worker && npm run build:uninstall-helper && npm run build:clamav && electron-builder --win nsis --publish never",
     "test:ui": "node tests/test-dashboard-ui.cjs"
   },
   "devDependencies": {
@@ -44,6 +45,10 @@
       {
         "from": "uninstall-helper-build/publish/MorpheusUninstallHelper.exe",
         "to": "uninstall-helper/MorpheusUninstallHelper.exe"
+      },
+      {
+        "from": "clamav-build/dist/clamav",
+        "to": "clamav"
       }
     ],
     "directories": {

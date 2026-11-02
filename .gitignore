@@ -7,6 +7,7 @@ __pycache__/
 dist/
 backend-build/
 worker-build/
+clamav-build/
 uninstall-helper-build/
 uninstall-helper/bin/
 uninstall-helper/obj/

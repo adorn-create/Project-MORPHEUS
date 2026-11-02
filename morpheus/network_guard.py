@@ -68,9 +68,9 @@ class WindowsFirewallLogMonitor:
                 "enabled": True,
                 "available": False,
                 "message": (
-                    "Windows Firewall log is unavailable. Morpheus will not enable logging. "
-                    "Enable dropped-packet logging yourself in Windows Defender Firewall with Advanced Security, "
-                    "then restart Morpheus monitoring."
+                    "Windows Firewall log is unavailable. Use the optional Morpheus installer logging setup "
+                    "or enable dropped-packet logging at the standard log path in Windows Defender Firewall, "
+                    "then restart monitoring. Morpheus does not change logging settings while running."
                 ),
                 "last_error": self.last_error,
             }

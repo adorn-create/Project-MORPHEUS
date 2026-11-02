@@ -84,7 +84,11 @@ if not CONFIG_PATH.exists():
     shutil.copyfile(bundled_config, CONFIG_PATH)
 engine = DefenseEngine(DATA_ROOT, CONFIG_PATH)
 scanner = StaticScanner()
-clamav_scanner = ClamAVScanner()
+clamav_binary_directory = os.environ.get("MORPHEUS_CLAMAV_DIR") or None
+clamav_scanner = ClamAVScanner(
+    binary_directory=clamav_binary_directory,
+    data_directory=DATA_ROOT / "clamav" if clamav_binary_directory else None,
+)
 code_reviewer = CodeReview()
 offline_helper = OfflineAssistant()
 download_monitor = DownloadMonitor(

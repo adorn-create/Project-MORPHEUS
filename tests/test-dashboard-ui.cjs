@@ -94,6 +94,7 @@ let passwordConfigured = false;
 let passkeyConfigured = false;
 let clamavAvailable = false;
 let freshclamAvailable = false;
+let clamavEngineVersion = null;
 let workerAvailable = false;
 let refreshTimer = null;
 let eventsData = [];
@@ -205,9 +206,13 @@ async function fetch(url, options = {}) {
       clamav: {
         available: clamavAvailable,
         updater_available: freshclamAvailable,
+        engine_version: clamavEngineVersion,
+        database_ready: clamavAvailable,
         message: clamavAvailable
           ? 'ClamAV 1.4.3 is ready.'
-          : 'ClamAV is not installed or clamscan.exe is not on PATH.',
+          : freshclamAvailable
+            ? 'ClamAV 1.5.4 is installed, but signatures are not ready. Download initial signatures.'
+            : 'ClamAV is unavailable.',
       },
       filesystem_monitor: {
         enabled: false,
@@ -377,12 +382,17 @@ async function main() {
   assert.equal(elements.get('clamavHealthState').textContent, 'Not available');
   assert.equal(elements.get('clamavScanButton').disabled, true);
   assert.equal(elements.get('clamavUpdateButton').disabled, true);
-  assert.match(elements.get('clamavUpdateStatus').textContent, /ClamAV scanner.*FreshClam updater/);
+  assert.match(elements.get('clamavUpdateStatus').textContent, /development mode/);
   assert.equal(elements.get('defenderHealthState').textContent, 'Healthy');
   assert.match(elements.get('inboundScanStatus').textContent, /Enroll a passkey/);
+  freshclamAvailable = true;
+  clamavEngineVersion = '1.5.4';
+  await elements.get('refreshButton').dispatch('click');
+  assert.equal(elements.get('clamavHealthState').textContent, 'Update needed');
+  assert.equal(elements.get('clamavScanButton').disabled, true);
+  assert.equal(elements.get('clamavUpdateButton').disabled, false);
   passkeyConfigured = true;
   clamavAvailable = true;
-  freshclamAvailable = true;
   await elements.get('refreshButton').dispatch('click');
   assert.equal(elements.get('clamavHealthState').textContent, 'Ready');
   assert.equal(elements.get('clamavScanButton').disabled, false);

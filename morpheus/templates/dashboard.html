@@ -209,7 +209,7 @@
     <section class="grid" aria-label="Security summary">
       <article class="card"><div class="card-label">Alerts saved</div><div class="card-value" id="eventCount">{{ events|length }}</div></article>
       <article class="card"><div class="card-label">Microsoft Defender status</div><div class="card-value small" id="defenderHealthState">Checking</div><div class="card-detail" id="defenderHealthDetail">Read-only status check; Morpheus will not change Defender settings.</div></article>
-      <article class="card"><div class="card-label">Independent signature scanner</div><div class="card-value small" id="clamavHealthState">Checking</div><div class="card-detail" id="clamavHealthDetail">ClamAV is optional and is not bundled.</div></article>
+      <article class="card"><div class="card-label">Independent signature scanner</div><div class="card-value small" id="clamavHealthState">Checking</div><div class="card-detail" id="clamavHealthDetail">ClamAV is included with the Windows installer.</div></article>
       <article class="card"><div class="card-label">Automatic file holding</div><div class="card-value small" id="quarantineState">{{ 'ON' if config.get('automatic_quarantine', false) else 'OFF' }}</div></article>
       <article class="card"><div class="card-label">Background checks</div><div class="card-value small" id="monitoringState">Checking</div><div class="card-detail" id="lastScanTime">Waiting for first check</div><div class="card-detail" id="downloadMonitorState">Folder file checks: OFF</div></article>
       <article class="card"><div class="card-label">Known security apps watched</div><div class="card-value" id="toolCatalogCount">Checking</div><div class="card-detail">Checks names only; list is not complete</div></article>
@@ -267,7 +267,7 @@
           <button id="reviewCodeButton" type="button">Review source code offline</button>
           <input id="folderInput" type="file" webkitdirectory multiple hidden aria-label="Choose a folder to scan">
         </div>
-        <p class="password-state" id="clamavUpdateStatus" role="status" aria-live="polite">Signature updates require the installed FreshClam updater and a passkey approval.</p>
+        <p class="password-state" id="clamavUpdateStatus" role="status" aria-live="polite">Download ClamAV's initial signature database after installation. Updates need an internet connection and a passkey approval.</p>
         <p class="subtle">Morpheus checks supported code for common security mistakes entirely on this computer. It does not need or send code to an AI service. These rules can miss problems and are not an antivirus scan.</p>
         <div class="result" id="scanResult" role="status" aria-live="polite">Enter a file path or choose a folder to analyze.</div>
         <div class="folder-results" id="folderResults"></div>
@@ -345,7 +345,7 @@
           <label for="inboundScanBlocking">Monitor Windows Firewall drops and automatically block public IPs probing many ports</label>
         </div>
         <p class="password-state" id="inboundScanStatus" role="status">Inbound scan protection status: checking...</p>
-        <p class="subtle">Requires Windows Firewall dropped-packet logging to already be enabled (Windows Defender Firewall with Advanced Security → Properties → Logging → Customize → Log dropped packets). Morpheus will not change Windows logging settings. It detects only logged inbound drops to this PC and may miss scans; ten distinct ports within 60 seconds is a heuristic, not proof of an attack. Enabling this adds inbound firewall blocks for detected public IPs. Use “Allow this IP” in the alert to remove the block and prevent future automatic blocks.</p>
+        <p class="subtle">Requires Windows Firewall dropped-packet logging to be enabled. The installer offers an unchecked option to set the standard log path and enable this logging; otherwise configure it in Windows Defender Firewall with Advanced Security → Properties → Logging → Customize → Log dropped packets. Morpheus will not change Windows logging settings while running. It detects only logged inbound drops to this PC and may miss scans; ten distinct ports within 60 seconds is a heuristic, not proof of an attack. Enabling this adds inbound firewall blocks for detected public IPs. Use “Allow this IP” in the alert to remove the block and prevent future automatic blocks.</p>
         <div class="worker-state" id="firewallWorkerState" role="status"><span class="dot"></span><span>Checking privileged worker...</span></div>
         <button class="firewall-worker-button" id="startFirewallWorkerButton" type="button" hidden>Start firewall helper (Windows approval)</button>
         <p class="result" id="firewallActionStatus" role="status" aria-live="polite"></p>
@@ -427,8 +427,8 @@ function setCodeReviewButtonsDisabled(disabled) {
 
 async function updateClamAVSignatures() {
   if (!window.confirm(
-    'Morpheus will run the installed FreshClam updater using its existing configuration. ' +
-    'This may connect to configured update servers and replace ClamAV signature database files. ' +
+    'Morpheus will run the bundled FreshClam updater to download or update ClamAV signatures from database.clamav.net. ' +
+    'This requires an internet connection and writes signature files to Morpheus user data. ' +
     'Morpheus will not change Defender or quarantine any files. Continue?'
   )) return;
   clamavUpdateButton.disabled = true;
@@ -909,7 +909,9 @@ async function refreshDashboard(includeFirewall = false) {
   const clamavStatusMessage = clamav.message || 'ClamAV status is unavailable.';
   document.getElementById('clamavHealthState').textContent =
     !clamav.available
-      ? 'Not available'
+      ? clamav.engine_version && clamav.updater_available
+        ? 'Update needed'
+        : 'Not available'
       : Number.isInteger(clamav.database_age_days) && clamav.database_age_days > 7
         ? 'Update needed'
         : 'Ready';
@@ -918,18 +920,19 @@ async function refreshDashboard(includeFirewall = false) {
   clamavScanButton.disabled = !clamav.available;
   clamavUpdateButton.disabled = !clamav.updater_available;
   clamavScanButton.title = clamav.available
-    ? 'Scan the selected file using the installed ClamAV engine.'
-    : 'Install ClamAV (clamscan) to enable file scanning.';
+    ? 'Scan the selected file using the bundled ClamAV engine.'
+    : 'Download ClamAV signatures before scanning.';
   clamavUpdateButton.title = clamav.updater_available
-    ? 'Update ClamAV signatures; a passkey approval is required.'
-    : 'Install FreshClam to enable signature updates.';
-  if (!clamav.available || !clamav.updater_available) {
-    const missing = [];
-    if (!clamav.available) missing.push('ClamAV scanner (clamscan)');
-    if (!clamav.updater_available) missing.push('FreshClam updater');
-    document.getElementById('clamavUpdateStatus').textContent =
-      `Unavailable until installed: ${missing.join(' and ')}. These are separate programs and are not bundled with Morpheus.`;
-  }
+    ? 'Download or update ClamAV signatures; a passkey approval is required.'
+    : 'The FreshClam updater is unavailable.';
+  document.getElementById('clamavUpdateStatus').textContent =
+    !clamav.available && clamav.engine_version && clamav.updater_available
+      ? 'ClamAV is bundled, but its signatures have not been downloaded yet. Select Update ClamAV signatures to fetch them; internet access and passkey approval are required.'
+      : !clamav.updater_available
+        ? 'ClamAV is included with the Windows installer. In development mode, install ClamAV and FreshClam separately to enable these controls.'
+        : Number.isInteger(clamav.database_age_days) && clamav.database_age_days > 7
+          ? 'ClamAV signatures are more than seven days old. Select Update ClamAV signatures to refresh them.'
+          : 'ClamAV signatures are ready. You can manually check for updates; internet access and passkey approval are required.';
   const filesystem = status.filesystem_monitor || {};
   document.getElementById('filesystemMonitorStatus').textContent =
     filesystem.message || 'Selected-folder event monitoring status unavailable.';

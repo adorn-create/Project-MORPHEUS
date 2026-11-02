@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -190,3 +191,117 @@ def test_freshclam_update_reports_errors_without_a_success_fallback(tmp_path, mo
 
     with pytest.raises(RuntimeError, match="signature database update failed"):
         scanner.update_signatures()
+
+
+def test_bundled_clamav_requires_initial_signatures_before_scanning(tmp_path, monkeypatch):
+    binary_directory = tmp_path / "clamav"
+    binary_directory.mkdir()
+    scanner_executable = binary_directory / "clamscan.exe"
+    updater = binary_directory / "freshclam.exe"
+    scanner_executable.write_bytes(b"test executable")
+    updater.write_bytes(b"test updater")
+    scanner = ClamAVScanner(
+        binary_directory=binary_directory,
+        data_directory=tmp_path / "user-data" / "clamav",
+    )
+    monkeypatch.setattr(
+        clamav.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="ClamAV 1.5.4\n",
+            stderr="",
+        ),
+    )
+
+    status = scanner.status(force=True)
+
+    assert status["available"] is False
+    assert status["engine_version"] == "1.5.4"
+    assert status["database_ready"] is False
+    assert status["updater_available"] is True
+    assert "Update ClamAV signatures" in status["message"]
+
+
+def test_bundled_freshclam_uses_writable_user_database_and_enables_scanning(tmp_path, monkeypatch):
+    binary_directory = tmp_path / "clamav"
+    binary_directory.mkdir()
+    scanner_executable = binary_directory / "clamscan.exe"
+    updater = binary_directory / "freshclam.exe"
+    scanner_executable.write_bytes(b"test executable")
+    updater.write_bytes(b"test updater")
+    data_directory = tmp_path / "user-data" / "clamav"
+    scanner = ClamAVScanner(
+        binary_directory=binary_directory,
+        data_directory=data_directory,
+    )
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        if command[0] == str(updater):
+            config_path = Path(command[1].split("=", 1)[1])
+            assert config_path.is_file()
+            assert f'DatabaseDirectory "{data_directory.as_posix()}"' in config_path.read_text(encoding="utf-8")
+            assert "DatabaseMirror database.clamav.net" in config_path.read_text(encoding="utf-8")
+            (data_directory / "main.cvd").write_bytes(b"signature database")
+            return SimpleNamespace(returncode=0, stdout="updated", stderr="")
+        return SimpleNamespace(
+            returncode=0,
+            stdout="ClamAV 1.5.4/27900/Mon Nov  2 08:00:00 2026\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(clamav.subprocess, "run", run)
+
+    result = scanner.update_signatures()
+
+    assert calls[0][0] == str(updater)
+    assert calls[0][-1] == "--stdout"
+    assert calls[1] == [
+        str(scanner_executable),
+        "--version",
+        "--database",
+        str(data_directory),
+    ]
+    assert result["status"]["available"] is True
+    assert result["status"]["database_ready"] is True
+
+
+def test_bundled_clamscan_uses_its_user_signature_directory(tmp_path, monkeypatch):
+    binary_directory = tmp_path / "clamav"
+    binary_directory.mkdir()
+    scanner_executable = binary_directory / "clamscan.exe"
+    scanner_executable.write_bytes(b"test executable")
+    data_directory = tmp_path / "user-data" / "clamav"
+    data_directory.mkdir(parents=True)
+    (data_directory / "main.cvd").write_bytes(b"signature database")
+    target = tmp_path / "sample.exe"
+    target.write_bytes(b"sample")
+    scanner = ClamAVScanner(
+        binary_directory=binary_directory,
+        data_directory=data_directory,
+    )
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        if "--version" in command:
+            return SimpleNamespace(
+                returncode=0,
+                stdout="ClamAV 1.5.4/27900/Mon Nov  2 08:00:00 2026\n",
+                stderr="",
+            )
+        return SimpleNamespace(returncode=0, stdout=f"{target}: OK\n", stderr="")
+
+    monkeypatch.setattr(clamav.subprocess, "run", run)
+
+    result = scanner.scan_file(target)
+
+    assert result["verdict"] == "clean"
+    assert calls[1][1:5] == [
+        "--stdout",
+        "--no-summary",
+        "--database",
+        str(data_directory),
+    ]

@@ -210,4 +210,4 @@ def test_missing_firewall_log_reports_protection_unavailable(tmp_path):
 
     assert status["enabled"] is True
     assert status["available"] is False
-    assert "will not enable logging" in status["message"]
+    assert "optional Morpheus installer logging setup" in status["message"]

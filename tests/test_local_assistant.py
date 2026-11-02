@@ -49,7 +49,8 @@ def test_offline_assistant_explains_optional_clamav_engine_and_database():
     answer = OfflineAssistant().chat("Can ClamAV update its signature database?")
 
     assert "FreshClam" in answer
-    assert "does not bundle ClamAV" in answer
+    assert "Windows installer includes the ClamAV scanner" in answer
+    assert "passkey approval" in answer
     assert "does not automatically quarantine" in answer
 
 def test_offline_assistant_explains_common_malware_entry_paths():
