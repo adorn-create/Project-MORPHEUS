@@ -4,6 +4,9 @@ psutil<7,>=6
 jinja2<4,>=3.1
 httpx<1,>=0.27
 python-multipart<1,>=0.0.18
+watchdog<7,>=6
+argon2-cffi<26,>=23.1
+webauthn<3,>=2.7
 
 [build]
 pyinstaller<7,>=6.19

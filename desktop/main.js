@@ -76,10 +76,11 @@ async function startBackend() {
     fs.copyFileSync(defaultConfig, configPath);
   }
 
+  const port = await findAvailablePort();
   const args = app.isPackaged
-    ? ['--host', '127.0.0.1', '--port', String(await findAvailablePort())]
-    : ['-m', 'uvicorn', 'morpheus.main:app', '--host', '127.0.0.1', '--port', String(await findAvailablePort())];
-  backendUrl = `http://127.0.0.1:${args[args.length - 1]}`;
+    ? ['--host', '127.0.0.1', '--port', String(port)]
+    : ['-m', 'uvicorn', 'morpheus.main:app', '--host', '127.0.0.1', '--port', String(port)];
+  backendUrl = `http://localhost:${port}`;
   const cwd = app.isPackaged ? userData : app.getAppPath();
   const logFile = fs.openSync(logPath, 'a');
   backend = spawn(executable, args, {
@@ -88,6 +89,7 @@ async function startBackend() {
       ...process.env,
       MORPHEUS_DATA_DIR: dataPath,
       MORPHEUS_CONFIG_PATH: configPath,
+      MORPHEUS_WEBAUTHN_ORIGIN: backendUrl,
     },
     stdio: ['ignore', logFile, logFile],
     windowsHide: true,

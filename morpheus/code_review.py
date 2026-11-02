@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from .scanner import (
+    MAX_FOLDER_SCAN_DIRECTORIES,
+    MAX_FOLDER_SCAN_FILES,
     ProtectedSystemPathError,
     is_protected_system_path,
     protected_system_roots,
@@ -433,8 +435,11 @@ class CodeReview:
     def _review_folder(self, root: Path) -> dict:
         roots = protected_system_roots()
         files_scanned = 0
+        files_attempted = 0
+        directories_visited = 0
         findings = []
         failures = []
+        truncated = False
 
         def record_walk_error(error: OSError) -> None:
             failures.append({
@@ -443,6 +448,10 @@ class CodeReview:
             })
 
         for current, directories, filenames in os.walk(root, followlinks=False, onerror=record_walk_error):
+            directories_visited += 1
+            if directories_visited > MAX_FOLDER_SCAN_DIRECTORIES:
+                truncated = True
+                break
             current_path = Path(current)
             directories[:] = [
                 name for name in directories
@@ -462,18 +471,25 @@ class CodeReview:
                     hasattr(candidate, "is_junction") and candidate.is_junction()
                 ):
                     continue
+                if files_attempted >= MAX_FOLDER_SCAN_FILES:
+                    truncated = True
+                    directories[:] = []
+                    break
+                files_attempted += 1
                 try:
                     findings.extend(self._review_file(candidate))
                     files_scanned += 1
                 except (OSError, UnicodeError, ValueError, MemoryError) as exc:
                     failures.append({"path": str(candidate), "message": str(exc)})
+            if truncated:
+                break
 
         return {
             "path": str(root),
             "files_scanned": files_scanned,
             "findings": findings,
             "failures": failures,
-            "truncated": False,
+            "truncated": truncated,
             "ruleset": self._ruleset(),
         }
 

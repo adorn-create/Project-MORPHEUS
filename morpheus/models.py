@@ -41,5 +41,15 @@ class SettingsPasswordRequest(BaseModel):
     password: str = Field(min_length=10, max_length=1024)
     current_password: str | None = Field(default=None, max_length=1024)
 
+class PasskeyRegistrationOptionsRequest(BaseModel):
+    bootstrap_password: str | None = Field(default=None, max_length=1024)
+
+class PasskeyCeremonyRequest(BaseModel):
+    ceremony_id: str = Field(min_length=1, max_length=128)
+    credential: dict
+
+class PasskeyRecoveryRequest(BaseModel):
+    code: str = Field(min_length=32, max_length=39)
+
 class FirewallRuleRequest(BaseModel):
     remote_ip: str = Field(min_length=1, max_length=64)

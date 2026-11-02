@@ -5,6 +5,17 @@ from fastapi.testclient import TestClient
 from morpheus import main
 
 
+def _passkey_authorization(monkeypatch, tmp_path):
+    manager = main.PasskeyManager(tmp_path / "passkeys.json", main._write_json_file)
+    manager.add_credential({
+        "credential_id": "AQ",
+        "public_key": "Ag",
+        "sign_count": 0,
+    })
+    monkeypatch.setattr(main, "passkey_manager", manager)
+    return {"X-Morpheus-Authorization": manager.issue_grant("testclient")}
+
+
 def test_favicon_is_served():
     response = TestClient(main.app).get("/favicon.ico")
 
@@ -27,6 +38,9 @@ def test_dashboard_renders_background_monitoring_and_folder_picker():
     assert 'id="browseDownloadFolderButton"' in response.text
     assert 'id="firewallRules"' in response.text
     assert 'id="settingsPasswordButton"' in response.text
+    assert 'id="passkeyButton"' in response.text
+    assert 'id="passkeyRecoveryButton"' in response.text
+    assert 'id="recoveryCodes"' in response.text
     assert 'id="dnsEntropyMonitoring"' in response.text
     assert 'id="powershellLogMonitoring"' in response.text
     assert 'id="canaryMonitoring"' in response.text
@@ -107,22 +121,24 @@ def test_clamav_update_endpoint_runs_freshclam_on_owner_request(tmp_path, monkey
         "status": {"available": True},
     }
     monkeypatch.setattr(main, "SETTINGS_PASSWORD_PATH", tmp_path / "settings-password.json")
+    headers = _passkey_authorization(monkeypatch, tmp_path)
     monkeypatch.setattr(main.clamav_scanner, "update_signatures", lambda: result)
 
-    response = TestClient(main.app).post("/api/antivirus/clamav/update")
+    response = TestClient(main.app).post("/api/antivirus/clamav/update", headers=headers)
 
     assert response.status_code == 200
     assert response.json() == result
 
 def test_clamav_update_endpoint_surfaces_freshclam_failure(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "SETTINGS_PASSWORD_PATH", tmp_path / "settings-password.json")
+    headers = _passkey_authorization(monkeypatch, tmp_path)
     monkeypatch.setattr(
         main.clamav_scanner,
         "update_signatures",
         lambda: (_ for _ in ()).throw(RuntimeError("FreshClam update failed.")),
     )
 
-    response = TestClient(main.app).post("/api/antivirus/clamav/update")
+    response = TestClient(main.app).post("/api/antivirus/clamav/update", headers=headers)
 
     assert response.status_code == 503
     assert response.json()["detail"] == "FreshClam update failed."
@@ -268,9 +284,16 @@ def test_automatic_quarantine_is_opt_in(monkeypatch, tmp_path):
     config_path = tmp_path / "config.json"
     config_path.write_text('{"automatic_quarantine": false}', encoding="utf-8")
     monkeypatch.setattr(main, "CONFIG_PATH", config_path)
+    headers = _passkey_authorization(monkeypatch, tmp_path)
     with TestClient(main.app) as client:
-        response = client.post("/api/config", json={"automatic_quarantine": True})
+        denied = client.post("/api/config", json={"automatic_quarantine": True})
+        response = client.post(
+            "/api/config",
+            headers=headers,
+            json={"automatic_quarantine": True},
+        )
 
+    assert denied.status_code == 401
     assert response.status_code == 200
     assert response.json()["automatic_quarantine"] is True
 
@@ -279,9 +302,11 @@ def test_automatic_inbound_scan_blocking_is_opt_in(monkeypatch, tmp_path):
     config_path = tmp_path / "config.json"
     config_path.write_text('{"automatic_inbound_scan_blocking": false}', encoding="utf-8")
     monkeypatch.setattr(main, "CONFIG_PATH", config_path)
+    headers = _passkey_authorization(monkeypatch, tmp_path)
     with TestClient(main.app) as client:
         response = client.post(
             "/api/config",
+            headers=headers,
             json={"automatic_inbound_scan_blocking": True},
         )
 
@@ -289,31 +314,101 @@ def test_automatic_inbound_scan_blocking_is_opt_in(monkeypatch, tmp_path):
     assert response.json()["automatic_inbound_scan_blocking"] is True
 
 
-def test_owner_password_protects_security_settings(monkeypatch, tmp_path):
+def test_config_replace_failure_preserves_previous_configuration(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.json"
+    original_config = {"automatic_quarantine": False}
+    config_path.write_text(json.dumps(original_config), encoding="utf-8")
+    monkeypatch.setattr(main, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(
+        main.os,
+        "replace",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("replace failed")),
+    )
+
+    try:
+        main._write_config_file({"automatic_quarantine": True})
+    except OSError as exc:
+        assert str(exc) == "replace failed"
+    else:
+        raise AssertionError("A failed config replacement should be reported")
+
+    assert json.loads(config_path.read_text(encoding="utf-8")) == original_config
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_owner_password_does_not_authorize_sensitive_settings(monkeypatch, tmp_path):
     password_path = tmp_path / "settings-password.json"
     config_path = tmp_path / "config.json"
     config_path.write_text('{"automatic_quarantine": false}', encoding="utf-8")
     monkeypatch.setattr(main, "SETTINGS_PASSWORD_PATH", password_path)
     monkeypatch.setattr(main, "CONFIG_PATH", config_path)
+    manager = main.PasskeyManager(tmp_path / "passkeys.json", main._write_json_file)
+    monkeypatch.setattr(main, "passkey_manager", manager)
     client = TestClient(main.app)
 
     setup = client.post("/api/settings-password", json={"password": "a-strong-owner-password"})
     assert setup.status_code == 200
     assert "a-strong-owner-password" not in password_path.read_text(encoding="utf-8")
 
-    denied = client.post("/api/config", json={"automatic_quarantine": True})
-    assert denied.status_code == 401
-    accepted = client.post(
+    denied = client.post(
         "/api/config",
         headers={"X-Morpheus-Settings-Password": "a-strong-owner-password"},
+        json={"automatic_quarantine": True},
+    )
+    assert denied.status_code == 403
+    manager.add_credential({
+        "credential_id": "AQ",
+        "public_key": "Ag",
+        "sign_count": 0,
+    })
+    accepted = client.post(
+        "/api/config",
+        headers={"X-Morpheus-Authorization": manager.issue_grant("testclient")},
         json={"automatic_quarantine": True},
     )
     assert accepted.status_code == 200
     assert accepted.json()["automatic_quarantine"] is True
 
 
+def test_invalid_recovery_codes_trigger_adaptive_lockout(monkeypatch, tmp_path):
+    from morpheus.auth import AuthFailureLimiter
+
+    manager = main.PasskeyManager(tmp_path / "passkeys.json", main._write_json_file)
+    manager.add_credential({
+        "credential_id": "AQ",
+        "public_key": "Ag",
+        "sign_count": 0,
+    })
+    monkeypatch.setattr(main, "passkey_manager", manager)
+    monkeypatch.setattr(main, "AUTH_FAILURE_LIMITER", AuthFailureLimiter())
+    client = TestClient(main.app, base_url="http://localhost:8080")
+
+    failures = [
+        client.post(
+            "/api/passkeys/recovery",
+            headers={"Origin": main.WEBAUTHN_ORIGIN},
+            json={"code": "0000-0000-0000-0000-0000-0000-0000-0000"},
+        )
+        for _ in range(5)
+    ]
+    locked = client.post(
+        "/api/passkeys/recovery",
+        headers={"Origin": main.WEBAUTHN_ORIGIN},
+        json={"code": "0000-0000-0000-0000-0000-0000-0000-0000"},
+    )
+
+    assert all(response.status_code == 401 for response in failures)
+    assert locked.status_code == 429
+    assert int(locked.headers["Retry-After"]) > 0
+
+
 def test_settings_password_requires_current_password_to_change(monkeypatch, tmp_path):
     monkeypatch.setattr(main, "SETTINGS_PASSWORD_PATH", tmp_path / "settings-password.json")
+    monkeypatch.setattr(
+        main,
+        "passkey_manager",
+        main.PasskeyManager(tmp_path / "passkeys.json", main._write_json_file),
+    )
     client = TestClient(main.app)
     client.post("/api/settings-password", json={"password": "a-strong-owner-password"})
 
@@ -332,6 +427,11 @@ def test_settings_password_requires_current_password_to_change(monkeypatch, tmp_
 
 def test_settings_password_accepts_ten_characters_and_rejects_nine(monkeypatch, tmp_path):
     monkeypatch.setattr(main, "SETTINGS_PASSWORD_PATH", tmp_path / "settings-password.json")
+    monkeypatch.setattr(
+        main,
+        "passkey_manager",
+        main.PasskeyManager(tmp_path / "passkeys.json", main._write_json_file),
+    )
     client = TestClient(main.app)
 
     rejected = client.post("/api/settings-password", json={"password": "Abcdef123"})
@@ -469,6 +569,7 @@ def test_allow_inbound_scan_source_removes_block_and_persists_owner_allowlist(
     config_path = tmp_path / "config.json"
     config_path.write_text('{"inbound_scan_allowlist": []}', encoding="utf-8")
     monkeypatch.setattr(main, "CONFIG_PATH", config_path)
+    headers = _passkey_authorization(monkeypatch, tmp_path)
     rule_name = scan_block_rule_name("1.2.3.4")
     removed = []
     events = []
@@ -487,6 +588,7 @@ def test_allow_inbound_scan_source_removes_block_and_persists_owner_allowlist(
 
     response = TestClient(main.app).post(
         "/api/firewall/allow",
+        headers=headers,
         json={"remote_ip": "1.2.3.4"},
     )
 
@@ -504,9 +606,11 @@ def test_allow_inbound_scan_source_rejects_private_ip(tmp_path, monkeypatch):
     config_path = tmp_path / "config.json"
     config_path.write_text("{}", encoding="utf-8")
     monkeypatch.setattr(main, "CONFIG_PATH", config_path)
+    headers = _passkey_authorization(monkeypatch, tmp_path)
 
     response = TestClient(main.app).post(
         "/api/firewall/allow",
+        headers=headers,
         json={"remote_ip": "192.168.1.10"},
     )
 

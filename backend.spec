@@ -21,6 +21,8 @@ for package in (
     "multipart",
     "psutil",
     "watchdog",
+    "argon2",
+    "webauthn",
     "pydantic",
     "pydantic_core",
 ):

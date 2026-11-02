@@ -355,13 +355,20 @@
         <div class="firewall-rules" id="firewallRules"></div>
       </div>
       <div class="panel" aria-labelledby="ownerSecurityTitle">
-        <div class="section-heading"><h2 id="ownerSecurityTitle">Confirm important changes with a password</h2></div>
-        <p class="subtle">Optional: set a Morpheus-only password before changing security settings or firewall rules. It is saved securely on this computer. It is not your Windows password.</p>
+        <div class="section-heading"><h2 id="ownerSecurityTitle">Passkey protection for sensitive changes</h2></div>
+        <p class="subtle">Sensitive settings and firewall actions require a passkey with device user verification (such as Windows Hello PIN/biometric or a security key). Owner passwords are only used to bootstrap first enrollment or manage the legacy password. Passkeys stay on your authenticator; Morpheus stores only public keys. Save the single-use recovery codes somewhere offline.</p>
         <div class="field-row">
-          <input id="ownerPasswordInput" type="password" autocomplete="current-password" aria-label="Owner settings password" placeholder="Enter password to confirm changes">
+          <input id="ownerPasswordInput" type="password" autocomplete="current-password" aria-label="Owner bootstrap password" placeholder="Current owner password, if configured">
         </div>
-        <button id="settingsPasswordButton" type="button">Set Morpheus password</button>
+        <div class="field-row">
+          <button class="primary" id="passkeyButton" type="button">Register passkey</button>
+          <button id="passkeyRecoveryButton" type="button">Use a recovery code</button>
+          <button id="settingsPasswordButton" type="button">Set Morpheus password</button>
+        </div>
+        <p class="password-state" id="passkeyState" role="status">Passkey status: checking...</p>
         <p class="password-state" id="settingsPasswordState" role="status">No owner password configured.</p>
+        <pre class="password-state" id="recoveryCodes" hidden></pre>
+        <button id="hideRecoveryCodesButton" type="button" hidden>Hide recovery codes</button>
         <form class="password-form" id="settingsPasswordForm" hidden>
           <label for="newOwnerPassword">New password (at least 10 characters)</label>
           <input id="newOwnerPassword" type="password" autocomplete="new-password" minlength="10" maxlength="1024" required>
@@ -408,6 +415,8 @@ const assistantForm = document.getElementById('assistantForm');
 const assistantQuestion = document.getElementById('assistantQuestion');
 const sendAssistantQuestion = document.getElementById('sendAssistantQuestion');
 let settingsPasswordConfigured = false;
+let passkeyConfigured = false;
+let pendingRecoveryAuthorization = '';
 let firewallRulesLoaded = false;
 let firewallRulesLoading = false;
 
@@ -425,12 +434,10 @@ async function updateClamAVSignatures() {
   const status = document.getElementById('clamavUpdateStatus');
   status.textContent = 'Running FreshClam. This may take several minutes...';
   try {
-    const settingsPassword = await requestSettingsPassword();
-    const headers = {};
-    if (settingsPassword) headers['X-Morpheus-Settings-Password'] = settingsPassword;
+    const authorization = await requestSensitiveAuthorization();
     const result = await requestJson('/api/antivirus/clamav/update', {
       method: 'POST',
-      headers,
+      headers: { 'X-Morpheus-Authorization': authorization },
     });
     status.textContent = `${result.message} ${result.status.message}`;
     await refreshDashboard();
@@ -837,12 +844,13 @@ async function sendAssistantChat(event) {
 }
 
 async function refreshDashboard(includeFirewall = false) {
-  const [events, timeline, sysmon, status, passwordStatus, workerStatus, processTree, risk] = await Promise.all([
+  const [events, timeline, sysmon, status, passwordStatus, passkeyStatus, workerStatus, processTree, risk] = await Promise.all([
     requestJson('/api/events'),
     requestJson('/api/timeline'),
     requestJson('/api/sysmon'),
     requestJson('/api/status'),
     requestJson('/api/settings-password/status'),
+    requestJson('/api/passkeys/status'),
     requestJson('/api/firewall/worker'),
     requestJson('/api/process-tree'),
     requestJson('/api/risk')
@@ -861,16 +869,23 @@ async function refreshDashboard(includeFirewall = false) {
   renderProcessTree(processTree);
   renderRiskSummary(risk);
   settingsPasswordConfigured = Boolean(passwordStatus.configured);
+  passkeyConfigured = Boolean(passkeyStatus.configured);
   document.getElementById('settingsPasswordState').textContent = settingsPasswordConfigured
-    ? 'Owner password is configured; it is required for security-setting changes.'
-    : 'No owner password configured; security-setting changes are not password-confirmed.';
+    ? 'An owner password is configured for first-passkey enrollment and password management.'
+    : 'No owner password configured. A passkey can be enrolled directly on this local device.';
   document.getElementById('settingsPasswordButton').textContent = settingsPasswordConfigured
     ? 'Change owner password'
     : 'Set owner password';
   document.getElementById('ownerPasswordInput').disabled = !settingsPasswordConfigured;
   document.getElementById('ownerPasswordInput').placeholder = settingsPasswordConfigured
-    ? 'Required to confirm protected changes'
-    : 'Not needed until you set an owner password';
+    ? 'Current owner password for enrollment/password changes'
+    : 'No bootstrap password is configured';
+  document.getElementById('passkeyButton').textContent = passkeyConfigured
+    ? 'Add another passkey'
+    : 'Register passkey';
+  document.getElementById('passkeyState').textContent = passkeyConfigured
+    ? `${passkeyStatus.credential_count} passkey(s) enrolled. Sensitive changes require fresh user verification. ${passkeyStatus.recovery_codes_remaining} recovery code(s) remain.`
+    : 'No passkey enrolled. Sensitive changes are disabled until you register a passkey.';
   setFirewallWorkerState(workerStatus);
   if (includeFirewall || !firewallRulesLoaded) loadFirewallRules();
   document.getElementById('eventCount').textContent = String(status.event_count);
@@ -1002,12 +1017,12 @@ async function allowInboundScanSource(remoteIp, button) {
   if (!window.confirm(`Remove Morpheus's inbound firewall block for ${remoteIp} and allow it in future scan checks?`)) return;
   button.disabled = true;
   try {
-    const settingsPassword = await requestSettingsPassword();
+    const authorization = await requestSensitiveAuthorization();
     await requestJson('/api/firewall/allow', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(settingsPassword ? { 'X-Morpheus-Settings-Password': settingsPassword } : {}),
+        'X-Morpheus-Authorization': authorization,
       },
       body: JSON.stringify({ remote_ip: remoteIp }),
     });
@@ -1123,6 +1138,7 @@ async function scanFolderPath(path) {
     scanResult.textContent =
       `Checked ${data.results.length} files. ${flagged} had warning signs; this does not mean they are infected. ` +
       `${data.skipped_system_paths} protected Windows locations were skipped${data.failures.length ? `; ${data.failures.length} files could not be checked` : ''}. ` +
+      `${data.truncated ? "The scan reached Morpheus's folder scan limit, so remaining files were not checked. " : ''}` +
       `A clean result does not guarantee every file is safe.${data.message ? ` ${data.message}` : ''}`;
   } catch (error) {
     scanResult.textContent = `Folder scan failed: ${error.message}`;
@@ -1237,6 +1253,7 @@ async function reviewSourceCode() {
     showCodeReviewResults(result);
     scanResult.textContent =
       `Reviewed ${result.files_scanned} source file${result.files_scanned === 1 ? '' : 's'} with ${result.ruleset}; found ${result.findings.length} finding${result.findings.length === 1 ? '' : 's'}. ` +
+      `${result.truncated ? "The review reached Morpheus's folder scan limit, so remaining source files were not checked. " : ''}` +
       `Reviews are heuristic, can miss issues, and are not a security certification.${result.failures.length ? ` ${result.failures.length} source files could not be checked; see the list below.` : ''}`;
   } catch (error) {
     scanResult.textContent = `Code review failed: ${error.message}`;
@@ -1294,9 +1311,11 @@ async function updateConfigFromToggle(toggle, change, errorLabel) {
   const previous = !toggle.checked;
   toggle.disabled = true;
   try {
-    const settingsPassword = await requestSettingsPassword();
-    const headers = { 'Content-Type': 'application/json' };
-    if (settingsPassword) headers['X-Morpheus-Settings-Password'] = settingsPassword;
+    const authorization = await requestSensitiveAuthorization();
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-Morpheus-Authorization': authorization,
+    };
     const config = await requestJson('/api/config', {
       method: 'POST',
       headers,
@@ -1332,11 +1351,150 @@ async function updateConfigFromToggle(toggle, change, errorLabel) {
   }
 }
 
-function requestSettingsPassword() {
-  if (!settingsPasswordConfigured) return '';
-  const password = document.getElementById('ownerPasswordInput').value;
-  if (!password) throw new Error('Enter the owner settings password shown in the owner settings panel.');
-  return password;
+function bufferToBase64Url(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function base64UrlToBuffer(value) {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const binary = atob(normalized + '='.repeat((4 - normalized.length % 4) % 4));
+  return Uint8Array.from(binary, character => character.charCodeAt(0));
+}
+
+function prepareWebAuthnOptions(publicKey) {
+  const prepared = { ...publicKey, challenge: base64UrlToBuffer(publicKey.challenge) };
+  if (publicKey.user) prepared.user = { ...publicKey.user, id: base64UrlToBuffer(publicKey.user.id) };
+  for (const key of ['allowCredentials', 'excludeCredentials']) {
+    if (publicKey[key]) {
+      prepared[key] = publicKey[key].map(item => ({ ...item, id: base64UrlToBuffer(item.id) }));
+    }
+  }
+  return prepared;
+}
+
+function serializeWebAuthnCredential(credential) {
+  const response = credential.response;
+  const serializedResponse = {
+    clientDataJSON: bufferToBase64Url(response.clientDataJSON),
+  };
+  if (response.attestationObject) {
+    serializedResponse.attestationObject = bufferToBase64Url(response.attestationObject);
+  }
+  if (response.authenticatorData) {
+    serializedResponse.authenticatorData = bufferToBase64Url(response.authenticatorData);
+  }
+  if (response.signature) serializedResponse.signature = bufferToBase64Url(response.signature);
+  if (response.userHandle) serializedResponse.userHandle = bufferToBase64Url(response.userHandle);
+  if (typeof response.getTransports === 'function') {
+    serializedResponse.transports = response.getTransports();
+  }
+  return {
+    id: credential.id,
+    rawId: bufferToBase64Url(credential.rawId),
+    type: credential.type,
+    response: serializedResponse,
+    clientExtensionResults: {},
+  };
+}
+
+async function requestSensitiveAuthorization() {
+  if (!passkeyConfigured) throw new Error('Register a passkey before making sensitive changes.');
+  if (pendingRecoveryAuthorization) {
+    const token = pendingRecoveryAuthorization;
+    pendingRecoveryAuthorization = '';
+    return token;
+  }
+  if (!navigator.credentials || typeof navigator.credentials.get !== 'function') {
+    throw new Error('This browser does not support WebAuthn passkeys. Use the Morpheus Windows desktop app or a supported browser.');
+  }
+  const challenge = await requestJson('/api/passkeys/authentication/options', { method: 'POST' });
+  const credential = await navigator.credentials.get({
+    publicKey: prepareWebAuthnOptions(challenge.public_key),
+  });
+  if (!credential) throw new Error('Passkey approval was cancelled.');
+  const result = await requestJson('/api/passkeys/authentication/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ceremony_id: challenge.ceremony_id,
+      credential: serializeWebAuthnCredential(credential),
+    }),
+  });
+  return result.authorization;
+}
+
+async function registerPasskey() {
+  const button = document.getElementById('passkeyButton');
+  const message = document.getElementById('passkeyState');
+  if (!navigator.credentials || typeof navigator.credentials.create !== 'function') {
+    message.textContent = 'This browser does not support WebAuthn passkeys. Use the Morpheus Windows desktop app or a supported browser.';
+    return;
+  }
+  button.disabled = true;
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    const body = {};
+    if (passkeyConfigured) {
+      headers['X-Morpheus-Authorization'] = await requestSensitiveAuthorization();
+    } else if (settingsPasswordConfigured) {
+      body.bootstrap_password = document.getElementById('ownerPasswordInput').value;
+      if (!body.bootstrap_password) throw new Error('Enter the current owner password to enroll your first passkey.');
+    }
+    const options = await requestJson('/api/passkeys/registration/options', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+    const credential = await navigator.credentials.create({
+      publicKey: prepareWebAuthnOptions(options.public_key),
+    });
+    if (!credential) throw new Error('Passkey registration was cancelled.');
+    const result = await requestJson('/api/passkeys/registration/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ceremony_id: options.ceremony_id,
+        credential: serializeWebAuthnCredential(credential),
+      }),
+    });
+    document.getElementById('ownerPasswordInput').value = '';
+    if (result.recovery_codes.length) {
+      const codeBlock = document.getElementById('recoveryCodes');
+      codeBlock.textContent = `Save these recovery codes offline. Each works once; they will not be shown again.\n\n${result.recovery_codes.join('\n')}`;
+      codeBlock.hidden = false;
+      document.getElementById('hideRecoveryCodesButton').hidden = false;
+    }
+    await refreshDashboard();
+  } catch (error) {
+    message.textContent = `Passkey enrollment failed: ${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function useRecoveryCode() {
+  const code = window.prompt('Enter one unused Morpheus recovery code. It will be permanently consumed.');
+  if (!code) return;
+  const button = document.getElementById('passkeyRecoveryButton');
+  const status = document.getElementById('passkeyState');
+  button.disabled = true;
+  try {
+    const result = await requestJson('/api/passkeys/recovery', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    pendingRecoveryAuthorization = result.authorization;
+    await refreshDashboard();
+    status.textContent = 'Recovery code accepted. Complete one sensitive action within 60 seconds; this code cannot be reused.';
+  } catch (error) {
+    status.textContent = `Recovery failed: ${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function setFirewallWorkerState(status) {
@@ -1409,9 +1567,13 @@ async function saveOwnerPassword() {
       return;
     }
     try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (passkeyConfigured) {
+        headers['X-Morpheus-Authorization'] = await requestSensitiveAuthorization();
+      }
       await requestJson('/api/settings-password', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           password,
           current_password: settingsPasswordConfigured
@@ -1427,7 +1589,7 @@ async function saveOwnerPassword() {
       message.textContent = '';
       await refreshDashboard();
       document.getElementById('settingsPasswordState').textContent =
-        'Password saved. Enter it above when confirming protected changes.';
+        'Password saved. It is used only for passkey enrollment and password management.';
     } catch (error) {
       message.className = 'password-form-message error';
       message.textContent = `Could not save password: ${error.message}`;
@@ -1445,12 +1607,12 @@ async function addFirewallRule() {
     }
     if (!window.confirm(`Add an outbound firewall block for ${remoteIp}? This can disrupt connectivity.`)) return;
     try {
-      const settingsPassword = await requestSettingsPassword();
+      const authorization = await requestSensitiveAuthorization();
       await requestJson('/api/firewall', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(settingsPassword ? { 'X-Morpheus-Settings-Password': settingsPassword } : {})
+          'X-Morpheus-Authorization': authorization
         },
         body: JSON.stringify({ remote_ip: remoteIp })
       });
@@ -1470,10 +1632,10 @@ async function removeFirewallRule(name) {
     status.className = 'result';
     status.textContent = `Removing firewall rule ${name}...`;
     try {
-      const settingsPassword = await requestSettingsPassword();
+      const authorization = await requestSensitiveAuthorization();
       await requestJson(`/api/firewall/${encodeURIComponent(name)}`, {
         method: 'DELETE',
-        ...(settingsPassword ? { headers: { 'X-Morpheus-Settings-Password': settingsPassword } } : {})
+        headers: { 'X-Morpheus-Authorization': authorization }
       });
       document.getElementById('ownerPasswordInput').value = '';
       status.textContent = `Removed Morpheus firewall rule ${name}.`;
@@ -1510,14 +1672,14 @@ async function startFirewallService() {
 }
 
 document.getElementById('automaticQuarantine').addEventListener('change', event => {
-  updateConfigFromToggle(event.target, enabled => ({ automatic_quarantine: enabled }), 'Could not update process quarantine setting');
+  return updateConfigFromToggle(event.target, enabled => ({ automatic_quarantine: enabled }), 'Could not update process quarantine setting');
 });
 downloadMonitoring.addEventListener('change', event => {
   if (event.target.checked && !window.confirm('Morpheus will periodically check new or changed supported files in the selected folder and its subfolders. Existing files are used as a baseline. Files stay on this device; this is not full antivirus protection. Continue?')) {
     event.target.checked = false;
     return;
   }
-  updateConfigFromToggle(event.target, enabled => ({ download_monitoring: enabled }), 'Could not update download monitoring');
+  return updateConfigFromToggle(event.target, enabled => ({ download_monitoring: enabled }), 'Could not update download monitoring');
 });
 async function chooseDownloadFolder() {
   const status = document.getElementById('scanResult');
@@ -1529,9 +1691,11 @@ async function chooseDownloadFolder() {
   try {
     const path = await window.morpheus.selectDownloadFolder();
     if (!path) return;
-    const settingsPassword = await requestSettingsPassword();
-    const headers = { 'Content-Type': 'application/json' };
-    if (settingsPassword) headers['X-Morpheus-Settings-Password'] = settingsPassword;
+    const authorization = await requestSensitiveAuthorization();
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-Morpheus-Authorization': authorization,
+    };
     const config = await requestJson('/api/config', {
       method: 'POST',
       headers,
@@ -1552,28 +1716,28 @@ dnsEntropyMonitoring.addEventListener('change', event => {
     event.target.checked = false;
     return;
   }
-  updateConfigFromToggle(event.target, enabled => ({ dns_entropy_monitoring: enabled }), 'Could not update DNS monitoring');
+  return updateConfigFromToggle(event.target, enabled => ({ dns_entropy_monitoring: enabled }), 'Could not update DNS monitoring');
 });
 powershellLogMonitoring.addEventListener('change', event => {
   if (event.target.checked && !window.confirm('Morpheus will read new PowerShell Operational event 4104 records when available. Script text is analyzed in memory and is not stored; only hashes and pattern names are logged. Existing events are not analyzed on startup. Continue?')) {
     event.target.checked = false;
     return;
   }
-  updateConfigFromToggle(event.target, enabled => ({ powershell_log_monitoring: enabled }), 'Could not update PowerShell monitoring');
+  return updateConfigFromToggle(event.target, enabled => ({ powershell_log_monitoring: enabled }), 'Could not update PowerShell monitoring');
 });
 processTreeMonitoring.addEventListener('change', event => {
   if (event.target.checked && !window.confirm('Morpheus will record process names, IDs, and parent-child relationships locally. It will not read command lines or process memory. Continue?')) {
     event.target.checked = false;
     return;
   }
-  updateConfigFromToggle(event.target, enabled => ({ process_tree_monitoring: enabled }), 'Could not update process-tree monitoring');
+  return updateConfigFromToggle(event.target, enabled => ({ process_tree_monitoring: enabled }), 'Could not update process-tree monitoring');
 });
 canaryMonitoring.addEventListener('change', event => {
   if (event.target.checked && !window.confirm('Morpheus will create two harmless decoy text files in its own data folder and alert if either changes or disappears. No files are placed in public or user document folders. Continue?')) {
     event.target.checked = false;
     return;
   }
-  updateConfigFromToggle(event.target, enabled => ({ canary_monitoring: enabled }), 'Could not update canary monitoring');
+  return updateConfigFromToggle(event.target, enabled => ({ canary_monitoring: enabled }), 'Could not update canary monitoring');
 });
 inboundScanBlocking.addEventListener('change', event => {
   if (event.target.checked && !window.confirm(
@@ -1585,7 +1749,7 @@ inboundScanBlocking.addEventListener('change', event => {
     event.target.checked = false;
     return;
   }
-  updateConfigFromToggle(
+  return updateConfigFromToggle(
     event.target,
     enabled => ({ automatic_inbound_scan_blocking: enabled }),
     'Could not update inbound scan protection',
@@ -1596,7 +1760,7 @@ quarantineDownloads.addEventListener('change', event => {
     event.target.checked = false;
     return;
   }
-  updateConfigFromToggle(event.target, enabled => ({ automatic_quarantine_downloads: enabled }), 'Could not update download quarantine');
+  return updateConfigFromToggle(event.target, enabled => ({ automatic_quarantine_downloads: enabled }), 'Could not update download quarantine');
 });
 document.getElementById('scanPath').addEventListener('keydown', event => {
   if (event.key === 'Enter') analyzeFilePath();
@@ -1630,6 +1794,13 @@ folderInput.addEventListener('change', () => scanFolder(Array.from(folderInput.f
 document.getElementById('settingsPasswordButton').addEventListener('click', () => {
   document.getElementById('settingsPasswordForm').hidden = false;
   document.getElementById('newOwnerPassword').focus();
+});
+document.getElementById('passkeyButton').addEventListener('click', registerPasskey);
+document.getElementById('passkeyRecoveryButton').addEventListener('click', useRecoveryCode);
+document.getElementById('hideRecoveryCodesButton').addEventListener('click', () => {
+  document.getElementById('recoveryCodes').textContent = '';
+  document.getElementById('recoveryCodes').hidden = true;
+  document.getElementById('hideRecoveryCodesButton').hidden = true;
 });
 document.getElementById('cancelOwnerPasswordButton').addEventListener('click', () => {
   document.getElementById('settingsPasswordForm').hidden = true;

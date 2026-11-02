@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .collector import utcnow
 from . import scanner as scanner_module
-from .scanner import StaticScanner, is_protected_system_path
+from .scanner import MAX_FOLDER_SCAN_FILES, StaticScanner, is_protected_system_path
 
 LOGGER = logging.getLogger(__name__)
 MONITORED_FILE_EXTENSIONS = {
@@ -15,7 +15,7 @@ MONITORED_FILE_EXTENSIONS = {
     ".xlsx", ".ppt", ".pptx", ".pdf", ".rtf", ".odt", ".ods", ".odp",
     ".txt", ".csv", ".jpg", ".jpeg", ".png", ".zip", ".7z", ".rar",
 }
-MAX_MONITORED_FILES = 5000
+MAX_MONITORED_FILES = MAX_FOLDER_SCAN_FILES
 BULK_CHANGE_WINDOW_SECONDS = 60
 BULK_CHANGE_FILE_THRESHOLD = 25
 BULK_CHANGE_HIGH_ENTROPY_THRESHOLD = 5

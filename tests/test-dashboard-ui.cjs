@@ -77,6 +77,8 @@ const ids = [
   'eventCount', 'monitoringState', 'lastScanTime', 'downloadMonitorState',
   'quarantineState', 'toolCatalogCount', 'settingsPasswordState',
   'settingsPasswordButton', 'settingsPasswordForm', 'passwordFormMessage',
+  'passkeyState', 'passkeyButton', 'passkeyRecoveryButton', 'recoveryCodes',
+  'hideRecoveryCodesButton',
   'ownerPasswordInput', 'newOwnerPassword', 'confirmOwnerPassword',
   'cancelOwnerPasswordButton', 'firewallRules', 'firewallWorkerState',
   'startFirewallWorkerButton', 'firewallActionStatus', 'addFirewallRuleButton',
@@ -85,6 +87,7 @@ const ids = [
 const elements = new Map(ids.map(id => [id, new Element(id)]));
 const calls = [];
 let passwordConfigured = false;
+let passkeyConfigured = true;
 let workerAvailable = false;
 let refreshTimer = null;
 let eventsData = [];
@@ -207,6 +210,22 @@ async function fetch(url, options = {}) {
     });
   }
   if (url === '/api/settings-password/status') return response({ configured: passwordConfigured });
+  if (url === '/api/passkeys/status') {
+    return response({
+      configured: passkeyConfigured,
+      credential_count: passkeyConfigured ? 1 : 0,
+      recovery_codes_remaining: 10,
+    });
+  }
+  if (url === '/api/passkeys/authentication/options' && method === 'POST') {
+    return response({
+      ceremony_id: 'test-ceremony',
+      public_key: { challenge: 'AQ', allowCredentials: [] },
+    });
+  }
+  if (url === '/api/passkeys/authentication/verify' && method === 'POST') {
+    return response({ authorization: 'single-use-test-grant', expires_in_seconds: 60 });
+  }
   if (url === '/api/firewall/worker') {
     return response({
       available: workerAvailable,
@@ -241,7 +260,7 @@ async function fetch(url, options = {}) {
     return response({ verdict: 'clean', detections: [], message: 'ClamAV found no matching signatures.' });
   }
   if (url === '/api/scan-folder' && method === 'POST') {
-    return response({ results: [], failures: [], skipped_system_paths: 0 });
+    return response({ results: [], failures: [], skipped_system_paths: 0, truncated: true });
   }
   if (url === '/api/settings-password' && method === 'POST') {
     passwordConfigured = true;
@@ -285,6 +304,21 @@ const window = {
     startFirewallService: async () => { workerAvailable = true; },
   },
 };
+const navigator = {
+  credentials: {
+    get: async () => ({
+      id: 'AQ',
+      rawId: Uint8Array.from([1]).buffer,
+      type: 'public-key',
+      response: {
+        clientDataJSON: Uint8Array.from([1]).buffer,
+        authenticatorData: Uint8Array.from([2]).buffer,
+        signature: Uint8Array.from([3]).buffer,
+        userHandle: null,
+      },
+    }),
+  },
+};
 
 async function main() {
   const occupiedServer = net.createServer();
@@ -319,6 +353,9 @@ async function main() {
     Promise,
     document,
     fetch,
+    navigator,
+    atob: value => Buffer.from(value, 'base64').toString('binary'),
+    btoa: value => Buffer.from(value, 'binary').toString('base64'),
     setInterval: callback => { refreshTimer = callback; return 1; },
     setTimeout: callback => { callback(); return 1; },
     window,
@@ -411,6 +448,7 @@ async function main() {
   selectedFolder = 'C:\\Users\\Owner\\Documents';
   await elements.get('browseFolderButton').dispatch('click');
   assert.ok(calls.some(call => call.url === '/api/scan-folder' && call.method === 'POST'));
+  assert.match(elements.get('scanResult').textContent, /remaining files were not checked/i);
   await elements.get('browseFileButton').dispatch('click');
   assert.equal(elements.get('scanPath').value, 'C:\\Users\\Owner\\sample.exe');
 
@@ -443,7 +481,11 @@ async function main() {
   const quarantine = elements.get('automaticQuarantine');
   quarantine.checked = true;
   await quarantine.dispatch('change');
-  assert.ok(calls.some(call => call.url === '/api/config' && call.method === 'POST'));
+  assert.ok(
+    calls.some(call => call.url === '/api/config' && call.method === 'POST'),
+    `${elements.get('scanResult').textContent}; ${elements.get('passkeyState').textContent}; ` +
+      JSON.stringify(calls.slice(-12).map(call => [call.url, call.method]))
+  );
 
   const downloads = elements.get('downloadMonitoring');
   downloads.checked = true;
@@ -461,7 +503,7 @@ async function main() {
   const quarantineDownloads = elements.get('quarantineDownloads');
   quarantineDownloads.checked = true;
   await quarantineDownloads.dispatch('change');
-  assert.equal(calls.filter(call => call.url === '/api/config' && call.method === 'POST').length, 3);
+  assert.equal(calls.filter(call => call.url === '/api/config' && call.method === 'POST').length, 4);
 
   elements.get('ownerPasswordInput').value = 'a-long-owner-password';
   elements.get('dnsEntropyMonitoring').checked = true;

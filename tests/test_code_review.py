@@ -54,6 +54,29 @@ def test_code_review_folder_only_reviews_source_files(tmp_path):
     assert [finding["rule_id"] for finding in result["findings"]] == ["unsafe-html"]
 
 
+def test_code_review_folder_is_bounded_and_reports_truncation(tmp_path, monkeypatch):
+    (tmp_path / "first.py").write_text("pass\n", encoding="utf-8")
+    (tmp_path / "second.py").write_text("pass\n", encoding="utf-8")
+    monkeypatch.setattr("morpheus.code_review.MAX_FOLDER_SCAN_FILES", 1)
+
+    result = CodeReview().review_path(tmp_path)
+
+    assert result["files_scanned"] == 1
+    assert result["truncated"] is True
+
+
+def test_folder_scans_stop_at_the_directory_limit(tmp_path, monkeypatch):
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    (nested / "file.py").write_text("pass\n", encoding="utf-8")
+    monkeypatch.setattr("morpheus.code_review.MAX_FOLDER_SCAN_DIRECTORIES", 1)
+
+    result = CodeReview().review_path(tmp_path)
+
+    assert result["files_scanned"] == 0
+    assert result["truncated"] is True
+
+
 def test_code_review_streams_large_files_without_a_per_file_size_limit(tmp_path):
     source = tmp_path / "large.py"
     prior_lines = 500_000

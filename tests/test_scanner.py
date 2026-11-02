@@ -117,3 +117,15 @@ def test_folder_scan_skips_system_files_at_drive_root(tmp_path, monkeypatch):
 
     assert result["skipped_system_paths"] == 1
     assert [item["path"] for item in result["results"]] == [str(user_file)]
+
+
+def test_folder_scan_is_bounded_and_reports_truncation(tmp_path, monkeypatch):
+    for name in ("first.txt", "second.txt"):
+        (tmp_path / name).write_text(name, encoding="utf-8")
+    monkeypatch.setattr("morpheus.scanner.MAX_FOLDER_SCAN_FILES", 1)
+    monkeypatch.setattr("morpheus.scanner.protected_system_roots", lambda: [])
+
+    result = StaticScanner().scan_folder(tmp_path)
+
+    assert len(result["results"]) == 1
+    assert result["truncated"] is True

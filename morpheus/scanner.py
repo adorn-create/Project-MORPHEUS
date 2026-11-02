@@ -7,6 +7,8 @@ from collections import Counter
 from pathlib import Path
 
 SCAN_CHUNK_SIZE = 1024 * 1024
+MAX_FOLDER_SCAN_FILES = 5000
+MAX_FOLDER_SCAN_DIRECTORIES = 20_000
 PROTECTED_DIRECTORY_NAMES = {
     "$recycle.bin", "$winreagent", "boot", "config.msi", "efi",
     "msocache", "program files", "program files (x86)", "programdata",
@@ -195,6 +197,9 @@ class StaticScanner:
         results = []
         failures = []
         skipped = 0
+        files_attempted = 0
+        directories_visited = 0
+        truncated = False
 
         def record_walk_error(error: OSError) -> None:
             failures.append({
@@ -205,6 +210,10 @@ class StaticScanner:
         for current, directories, filenames in os.walk(
             root, followlinks=False, onerror=record_walk_error
         ):
+            directories_visited += 1
+            if directories_visited > MAX_FOLDER_SCAN_DIRECTORIES:
+                truncated = True
+                break
             current_path = Path(current).resolve()
             retained_directories = []
             for directory in directories:
@@ -223,23 +232,31 @@ class StaticScanner:
                 ):
                     skipped += 1
                     continue
+                if files_attempted >= MAX_FOLDER_SCAN_FILES:
+                    truncated = True
+                    directories[:] = []
+                    break
+                files_attempted += 1
                 try:
                     results.append(self.scan_file(candidate, protected_roots=system_roots))
                 except (OSError, ValueError) as exc:
                     failures.append({"name": str(candidate), "message": str(exc)})
-        return self._folder_result(results, failures, skipped)
+            if truncated:
+                break
+        return self._folder_result(results, failures, skipped, truncated=truncated)
 
     @staticmethod
     def _is_link_or_junction(path: Path) -> bool:
         return path.is_symlink() or (hasattr(path, "is_junction") and path.is_junction())
 
     @staticmethod
-    def _folder_result(results, failures, skipped, message=None):
+    def _folder_result(results, failures, skipped, message=None, *, truncated=False):
         return {
             "results": results,
             "failures": failures,
             "skipped_system_paths": skipped,
             "message": message,
+            "truncated": truncated,
         }
 
     def scan_bytes(self, content: bytes, name: str) -> dict:
