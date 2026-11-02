@@ -156,6 +156,57 @@ def test_eicar_test_signature_is_alerted_but_never_auto_quarantined(tmp_path):
     assert quarantine.quarantined == []
 
 
+def test_download_monitor_uses_clamav_without_automatic_file_changes(tmp_path):
+    class CleanHeuristicScanner:
+        def scan_file(self, path):
+            return {
+                "confidence": 0.0,
+                "reasons": [],
+                "entropy": 2.0,
+                "signature_matches": [],
+            }
+
+    class FakeAntivirus:
+        def __init__(self):
+            self.scanned = []
+
+        def status(self):
+            return {"available": True}
+
+        def scan_file(self, path):
+            self.scanned.append(path)
+            return {
+                "verdict": "infected",
+                "detections": ["Example.Test.Signature"],
+                "engine_version": "1.4.3",
+                "database_version": "27900",
+            }
+
+    watched = tmp_path / "Downloads"
+    watched.mkdir()
+    quarantine = FakeQuarantine()
+    antivirus = FakeAntivirus()
+    database = Database(tmp_path / "events.db")
+    monitor = DownloadMonitor(
+        CleanHeuristicScanner(),
+        quarantine,
+        database,
+        EvidenceJournal(tmp_path / "journal"),
+        antivirus=antivirus,
+    )
+    config = {"download_monitoring": True, "download_directory": str(watched)}
+    monitor.scan_new_downloads(config)
+    sample = watched / "new.exe"
+    sample.write_bytes(b"sample")
+    for _ in range(3):
+        events = monitor.scan_new_downloads(config)
+
+    assert [event["kind"] for event in events] == ["download_clamav_detection"]
+    assert events[0]["response"] == "review_required_manual_approval"
+    assert antivirus.scanned == [sample]
+    assert quarantine.quarantined == []
+
+
 def test_bulk_high_entropy_file_changes_create_review_only_alert(tmp_path, monkeypatch):
     class HighEntropyScanner:
         def scan_file(self, path):

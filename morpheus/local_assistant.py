@@ -3,6 +3,21 @@ import re
 
 _INTENTS = (
     (
+        ("clamav", "signature feed", "signature database", "freshclam"),
+        "Morpheus can use an installed ClamAV scanner and its signature database "
+        "for on-demand and selected-folder scans. Install ClamAV from its official "
+        "source and keep its database updated with FreshClam. Morpheus does not "
+        "bundle ClamAV or download signature databases. It does not automatically "
+        "quarantine ClamAV findings. A clean result is not proof that a file is safe.",
+    ),
+    (
+        ("defender", "antivirus protection", "real-time protection", "security health"),
+        "Morpheus can read Microsoft Defender's protection status and alert if "
+        "key protections are off or signatures are more than seven days old. "
+        "This check is read-only: Morpheus does not change Defender settings. "
+        "Morpheus is not a replacement antivirus engine.",
+    ),
+    (
         ("ollama", "model", "ai", "artificial intelligence"),
         "Morpheus uses a small built-in offline helper and local review rules. "
         "It does not need Ollama or an internet connection. This helper uses "
@@ -70,7 +85,8 @@ _INTENTS = (
         ("help", "feature", "what can", "how do", "how does"),
         "Morpheus can check running-app activity, scan selected files and folders "
         "offline for a limited test signature and heuristic warning patterns, "
-        "periodically monitor selected folders, review supported source code, "
+        "monitor selected folders, scan files with an optional installed ClamAV "
+        "engine, review supported source code, "
         "review Windows Firewall drops for optional inbound scan blocking, and "
         "explain alerts. These checks can miss threats and do not replace "
         "Microsoft Defender.",

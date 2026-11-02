@@ -20,6 +20,7 @@ for package in (
     "jinja2",
     "multipart",
     "psutil",
+    "watchdog",
     "pydantic",
     "pydantic_core",
 ):

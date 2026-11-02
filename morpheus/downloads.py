@@ -21,11 +21,12 @@ BULK_CHANGE_FILE_THRESHOLD = 25
 BULK_CHANGE_HIGH_ENTROPY_THRESHOLD = 5
 
 class DownloadMonitor:
-    def __init__(self, scanner: StaticScanner, quarantine, database, journal):
+    def __init__(self, scanner: StaticScanner, quarantine, database, journal, antivirus=None):
         self.scanner = scanner
         self.quarantine = quarantine
         self.database = database
         self.journal = journal
+        self.antivirus = antivirus
         self._observed: dict[Path, tuple[int, int, int]] = {}
         self._known: dict[Path, tuple[int, int]] = {}
         self._initialized_roots: set[Path] = set()
@@ -102,6 +103,37 @@ class DownloadMonitor:
                 except (OSError, PermissionError) as exc:
                     self._record(resolved, 0.0, [str(exc)], f"download_scan_failed:{exc}")
                     continue
+
+                if self.antivirus is not None and self.antivirus.status()["available"]:
+                    try:
+                        antivirus_result = self.antivirus.scan_file(resolved)
+                    except (OSError, RuntimeError, ValueError) as exc:
+                        LOGGER.warning("ClamAV could not scan monitored file %s: %s", resolved, exc)
+                        self._record(
+                            resolved,
+                            0.0,
+                            [f"ClamAV scan failed: {exc}"],
+                            f"download_antivirus_scan_failed:{exc}",
+                            kind="download_antivirus_scan_error",
+                        )
+                    else:
+                        if antivirus_result["verdict"] == "infected":
+                            event = {
+                                "timestamp": utcnow(),
+                                "kind": "download_clamav_detection",
+                                "severity": "high",
+                                "source": "ClamAV signature scan",
+                                "target": resolved.name,
+                                "confidence": None,
+                                "evidence": json.dumps({
+                                    "detections": antivirus_result["detections"],
+                                    "engine_version": antivirus_result["engine_version"],
+                                    "database_version": antivirus_result["database_version"],
+                                }),
+                                "response": "review_required_manual_approval",
+                            }
+                            self._write_event(event)
+                            detections.append(event)
 
                 signature_matches = result.get("signature_matches", [])
                 if signature_matches:
@@ -229,8 +261,18 @@ class DownloadMonitor:
         self.database.add(event)
         self.journal.append(event)
 
-    def _record(self, path: Path, confidence: float, reasons: list[str], response: str):
-        kind = "folder_monitor_limit" if response == "folder_monitor_limit" else "download_scan_error"
+    def _record(
+        self,
+        path: Path,
+        confidence: float,
+        reasons: list[str],
+        response: str,
+        *,
+        kind: str | None = None,
+    ):
+        kind = kind or (
+            "folder_monitor_limit" if response == "folder_monitor_limit" else "download_scan_error"
+        )
         event = {
             "timestamp": utcnow(),
             "kind": kind,

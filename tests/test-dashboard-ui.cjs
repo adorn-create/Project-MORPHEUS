@@ -104,6 +104,7 @@ let config = {
   canary_monitoring: false,
   automatic_inbound_scan_blocking: false,
   inbound_scan_allowlist: [],
+  download_directory: 'C:\\Users\\Owner\\Downloads',
   high_confidence_threshold: 0.95,
 };
 let selectedFolder = null;
@@ -186,6 +187,22 @@ async function fetch(url, options = {}) {
         process_tree_enabled: true,
         canary: { enabled: false, directory: 'test-data', files: 2, message: 'Off.' },
       },
+      defender: {
+        supported: true,
+        available: true,
+        healthy: true,
+        message: 'Microsoft Defender protections are on and signatures are current.',
+      },
+      clamav: {
+        available: true,
+        message: 'ClamAV 1.4.3 is ready.',
+      },
+      filesystem_monitor: {
+        enabled: false,
+        available: true,
+        active: false,
+        message: 'Off.',
+      },
       config,
     });
   }
@@ -219,6 +236,9 @@ async function fetch(url, options = {}) {
   if (url === '/api/scan' && method === 'POST') return response({ detected: [], processes_checked: 42 });
   if (url === '/api/scan-file' && method === 'POST') {
     return response({ path: 'sample.exe', size: 2, confidence: 0, reasons: [] });
+  }
+  if (url === '/api/scan-antivirus' && method === 'POST') {
+    return response({ verdict: 'clean', detections: [], message: 'ClamAV found no matching signatures.' });
   }
   if (url === '/api/scan-folder' && method === 'POST') {
     return response({ results: [], failures: [], skipped_system_paths: 0 });
@@ -308,6 +328,8 @@ async function main() {
 
   assert.equal(elements.get('runScanButton').listeners.has('click'), true);
   assert.equal(elements.has('fullscreenButton'), false, 'F11 remains a shortcut without an on-screen button');
+  assert.equal(elements.get('clamavHealthState').textContent, 'Ready');
+  assert.equal(elements.get('defenderHealthState').textContent, 'Healthy');
   fullScreenListeners[0](true);
   assert.equal(document.body.classList.contains('is-fullscreen'), true);
   fullScreenListeners[0](false);
@@ -375,6 +397,9 @@ async function main() {
   await elements.get('fileScanButton').dispatch('click');
   assert.ok(calls.some(call => call.url === '/api/scan-file' && call.method === 'POST'));
   assert.match(elements.get('scanResult').textContent, /no known warning signs/i);
+  await elements.get('clamavScanButton').dispatch('click');
+  assert.ok(calls.some(call => call.url === '/api/scan-antivirus' && call.method === 'POST'));
+  assert.match(elements.get('scanResult').textContent, /ClamAV found no matching signatures/);
   elements.get('scanPath').value = 'C:\\Users\\Owner\\sample.py';
   await elements.get('reviewCodeButton').dispatch('click');
   const codeReviewCall = calls.find(call => call.url === '/api/review-code' && call.method === 'POST');

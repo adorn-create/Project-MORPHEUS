@@ -18,6 +18,9 @@ class ConfigUpdate(BaseModel):
 class ScanFileRequest(BaseModel):
     path: str = Field(min_length=1, max_length=32768)
 
+class AntivirusScanRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=32768)
+
 class ScanFolderRequest(BaseModel):
     path: str = Field(min_length=1, max_length=32768)
 

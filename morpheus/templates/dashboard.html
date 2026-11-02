@@ -207,6 +207,8 @@
 
     <section class="grid" aria-label="Security summary">
       <article class="card"><div class="card-label">Alerts saved</div><div class="card-value" id="eventCount">{{ events|length }}</div></article>
+      <article class="card"><div class="card-label">Microsoft Defender status</div><div class="card-value small" id="defenderHealthState">Checking</div><div class="card-detail" id="defenderHealthDetail">Read-only status check; Morpheus will not change Defender settings.</div></article>
+      <article class="card"><div class="card-label">Independent signature scanner</div><div class="card-value small" id="clamavHealthState">Checking</div><div class="card-detail" id="clamavHealthDetail">ClamAV is optional and is not bundled.</div></article>
       <article class="card"><div class="card-label">Automatic file holding</div><div class="card-value small" id="quarantineState">{{ 'ON' if config.get('automatic_quarantine', false) else 'OFF' }}</div></article>
       <article class="card"><div class="card-label">Background checks</div><div class="card-value small" id="monitoringState">Checking</div><div class="card-detail" id="lastScanTime">Waiting for first check</div><div class="card-detail" id="downloadMonitorState">Folder file checks: OFF</div></article>
       <article class="card"><div class="card-label">Known security apps watched</div><div class="card-value" id="toolCatalogCount">Checking</div><div class="card-detail">Checks names only; list is not complete</div></article>
@@ -242,13 +244,13 @@
         </div>
         <div class="setting-toggle">
           <input id="downloadMonitoring" type="checkbox" {% if config.get('download_monitoring', false) %}checked{% endif %}>
-          <label for="downloadMonitoring">Check new or changed supported files in the selected folder</label>
+          <label for="downloadMonitoring">Monitor and scan new or changed supported files in the selected folder</label>
         </div>
         <div class="field-row">
           <input id="downloadDirectoryPath" aria-label="Monitored folder" readonly value="{{ config.get('download_directory') or '' }}" placeholder="Default: your user's Downloads folder">
           <button id="browseDownloadFolderButton" type="button">Choose monitored folder</button>
         </div>
-        <p class="password-state">Checks run during background polling (5 seconds by default), including subfolders. Existing files are used as a baseline; only new or changed supported files are scanned. Up to 5,000 supported files are tracked per check, and Windows/protected paths are skipped.</p>
+        <p class="password-state" id="filesystemMonitorStatus">Checks run during background polling and react to supported file changes when available, including subfolders. Existing files are used as a baseline; only new or changed supported files are scanned. Up to 5,000 supported files are tracked per check, and Windows/protected paths are skipped.</p>
         <div class="setting-toggle">
           <input id="quarantineDownloads" type="checkbox" {% if config.get('automatic_quarantine_downloads', false) %}checked{% endif %}>
           <label for="quarantineDownloads">Automatically put files with strong heuristic warning signs into a holding area</label>
@@ -258,10 +260,13 @@
           <input id="scanPath" aria-label="File or folder path to scan" placeholder="Choose a file or folder, or enter its path">
           <button id="browseFileButton" type="button">Browse file</button>
           <button class="primary" id="fileScanButton" type="button">Check this file</button>
+          <button id="clamavScanButton" type="button" disabled>Scan with ClamAV</button>
+          <button id="clamavUpdateButton" type="button" disabled>Update ClamAV signatures</button>
           <button id="browseFolderButton" type="button">Browse folder</button>
           <button id="reviewCodeButton" type="button">Review source code offline</button>
           <input id="folderInput" type="file" webkitdirectory multiple hidden aria-label="Choose a folder to scan">
         </div>
+        <p class="password-state" id="clamavUpdateStatus" role="status" aria-live="polite">FreshClam signature updates are owner-triggered and use the installed ClamAV configuration.</p>
         <p class="subtle">Morpheus checks supported code for common security mistakes entirely on this computer. It does not need or send code to an AI service. These rules can miss problems and are not an antivirus scan.</p>
         <div class="result" id="scanResult" role="status" aria-live="polite">Enter a file path or choose a folder to analyze.</div>
         <div class="folder-results" id="folderResults"></div>
@@ -379,6 +384,8 @@ const refreshButton = document.getElementById('refreshButton');
 const scanStatus = document.getElementById('scanStatus');
 const connectionStatus = document.getElementById('connectionStatus');
 const fileScanButton = document.getElementById('fileScanButton');
+const clamavScanButton = document.getElementById('clamavScanButton');
+const clamavUpdateButton = document.getElementById('clamavUpdateButton');
 const browseFileButton = document.getElementById('browseFileButton');
 const browseFolderButton = document.getElementById('browseFolderButton');
 const folderInput = document.getElementById('folderInput');
@@ -406,6 +413,56 @@ let firewallRulesLoading = false;
 
 function setCodeReviewButtonsDisabled(disabled) {
   reviewCodeButton.disabled = disabled;
+}
+
+async function updateClamAVSignatures() {
+  if (!window.confirm(
+    'Morpheus will run the installed FreshClam updater using its existing configuration. ' +
+    'This may connect to configured update servers and replace ClamAV signature database files. ' +
+    'Morpheus will not change Defender or quarantine any files. Continue?'
+  )) return;
+  clamavUpdateButton.disabled = true;
+  const status = document.getElementById('clamavUpdateStatus');
+  status.textContent = 'Running FreshClam. This may take several minutes...';
+  try {
+    const settingsPassword = await requestSettingsPassword();
+    const headers = {};
+    if (settingsPassword) headers['X-Morpheus-Settings-Password'] = settingsPassword;
+    const result = await requestJson('/api/antivirus/clamav/update', {
+      method: 'POST',
+      headers,
+    });
+    status.textContent = `${result.message} ${result.status.message}`;
+    await refreshDashboard();
+  } catch (error) {
+    status.textContent = `FreshClam update failed: ${error.message}`;
+  } finally {
+    clamavUpdateButton.disabled = false;
+  }
+}
+
+async function scanWithClamAV() {
+  const path = document.getElementById('scanPath').value.trim();
+  if (!path) {
+    scanResult.textContent = 'Choose or enter a single file path to scan with ClamAV.';
+    return;
+  }
+  clamavScanButton.disabled = true;
+  scanResult.textContent = 'Scanning the selected file with the installed ClamAV engine...';
+  try {
+    const result = await requestJson('/api/scan-antivirus', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    scanResult.textContent = result.detections?.length
+      ? `${result.message} Matches: ${result.detections.join(', ')}`
+      : result.message;
+  } catch (error) {
+    scanResult.textContent = `ClamAV scan failed: ${error.message}`;
+  } finally {
+    clamavScanButton.disabled = false;
+  }
 }
 
 if (window.morpheus && typeof window.morpheus.onFullScreenChanged === 'function') {
@@ -538,6 +595,37 @@ function friendlyEvidence(value, kind) {
   }
   if (kind === 'inbound_scan_allowlisted') {
     return 'You chose to allow this public IP. Morpheus will not automatically block it again.';
+  }
+  if (kind === 'defender_protection_degraded') {
+    let details = evidence;
+    if (typeof evidence === 'string') {
+      try {
+        details = JSON.parse(evidence);
+      } catch {
+        return evidence || 'Microsoft Defender protection needs attention.';
+      }
+    }
+    const issues = Array.isArray(details?.issues) ? details.issues : [];
+    return issues.length
+      ? `Microsoft Defender reports: ${issues.join('; ')}. Review Windows Security; Morpheus made no changes.`
+      : 'Microsoft Defender protection needs attention. Review Windows Security; Morpheus made no changes.';
+  }
+  if (kind === 'defender_protection_restored') {
+    return 'Microsoft Defender protections that were previously reported as needing attention are now on and current.';
+  }
+  if (kind === 'clamav_detection' || kind === 'download_clamav_detection') {
+    let details = evidence;
+    if (typeof evidence === 'string') {
+      try {
+        details = JSON.parse(evidence);
+      } catch {
+        return evidence || 'ClamAV reported a signature match.';
+      }
+    }
+    const detections = Array.isArray(details?.detections) ? details.detections : [];
+    return detections.length
+      ? `ClamAV matched: ${detections.join(', ')}. Review the result; Morpheus did not change the file.`
+      : 'ClamAV reported a signature match. Review it in ClamAV; Morpheus did not change the file.';
   }
   if (kind === 'download_scan_error') {
     return 'Morpheus could not check a new or changed file. Review the error and use Windows Security for an antivirus scan.';
@@ -786,6 +874,35 @@ async function refreshDashboard(includeFirewall = false) {
   setFirewallWorkerState(workerStatus);
   if (includeFirewall || !firewallRulesLoaded) loadFirewallRules();
   document.getElementById('eventCount').textContent = String(status.event_count);
+  const defender = status.defender || {};
+  const defenderState = document.getElementById('defenderHealthState');
+  defenderState.textContent = !defender.supported
+    ? 'Windows only'
+    : !defender.available
+      ? defender.checked_at || defender.last_error ? 'Status unavailable' : 'Checking'
+      : defender.healthy
+        ? 'Healthy'
+        : 'Needs attention';
+  defenderState.classList.toggle(
+    'severity-critical',
+    defender.available && defender.healthy === false,
+  );
+  document.getElementById('defenderHealthDetail').textContent =
+    defender.message || 'Microsoft Defender status is unavailable.';
+  const clamav = status.clamav || {};
+  document.getElementById('clamavHealthState').textContent =
+    !clamav.available
+      ? 'Not available'
+      : Number.isInteger(clamav.database_age_days) && clamav.database_age_days > 7
+        ? 'Update needed'
+        : 'Ready';
+  document.getElementById('clamavHealthDetail').textContent =
+    clamav.message || 'ClamAV status is unavailable.';
+  clamavScanButton.disabled = !clamav.available;
+  clamavUpdateButton.disabled = !clamav.updater_available;
+  const filesystem = status.filesystem_monitor || {};
+  document.getElementById('filesystemMonitorStatus').textContent =
+    filesystem.message || 'Selected-folder event monitoring status unavailable.';
   document.getElementById('toolCatalogCount').textContent = String(status.tool_watch.catalog_entries);
   document.getElementById('monitoringState').textContent = status.monitoring.running ? 'On' : 'Off';
   document.getElementById('monitoringState').classList.toggle('severity-critical', !status.monitoring.running);
@@ -1170,6 +1287,8 @@ async function scanFolder(files) {
 }
 
 fileScanButton.addEventListener('click', analyzeFilePath);
+clamavScanButton.addEventListener('click', scanWithClamAV);
+clamavUpdateButton.addEventListener('click', updateClamAVSignatures);
 reviewCodeButton.addEventListener('click', () => reviewSourceCode());
 async function updateConfigFromToggle(toggle, change, errorLabel) {
   const previous = !toggle.checked;

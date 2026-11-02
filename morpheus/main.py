@@ -27,9 +27,13 @@ from .timeline import AttackTimeline
 from .quarantine import QuarantineManager
 from .persistence import inspect_autostart_registry
 from .network_guard import WindowsFirewallLogMonitor
+from .defender_monitor import DefenderHealthMonitor
+from .clamav import ClamAVScanner
+from .filesystem_monitor import SelectedFolderEventMonitor
 from .models import (
     CodeReviewRequest,
     AssistantChatRequest,
+    AntivirusScanRequest,
     ConfigUpdate,
     FirewallRuleRequest,
     QuarantineRequest,
@@ -55,9 +59,16 @@ if not CONFIG_PATH.exists():
     shutil.copyfile(bundled_config, CONFIG_PATH)
 engine = DefenseEngine(DATA_ROOT, CONFIG_PATH)
 scanner = StaticScanner()
+clamav_scanner = ClamAVScanner()
 code_reviewer = CodeReview()
 offline_helper = OfflineAssistant()
-download_monitor = DownloadMonitor(scanner, engine.quarantine, engine.db, engine.journal)
+download_monitor = DownloadMonitor(
+    scanner,
+    engine.quarantine,
+    engine.db,
+    engine.journal,
+    antivirus=clamav_scanner,
+)
 sysmon = SysmonStatus()
 timeline = AttackTimeline(engine.db)
 quarantine = QuarantineManager(DATA_ROOT / "quarantine")
@@ -65,9 +76,12 @@ dns_monitor = DnsEntropyMonitor()
 powershell_monitor = PowerShellLogMonitor()
 canary_monitor = CanaryMonitor(DATA_ROOT / "canaries")
 inbound_scan_monitor = WindowsFirewallLogMonitor()
+defender_health_monitor = DefenderHealthMonitor()
+filesystem_event_monitor = SelectedFolderEventMonitor()
 templates = Jinja2Templates(directory=str(ROOT / "morpheus" / "templates"))
-app = FastAPI(title="Morpheus Defense", version="0.1.3")
+app = FastAPI(title="Morpheus Defense", version="0.1.4")
 worker_stop = threading.Event()
+worker_wakeup = threading.Event()
 worker_thread: threading.Thread | None = None
 scan_lock = threading.Lock()
 last_scan_at: str | None = None
@@ -125,6 +139,11 @@ def status():
             "process_tree_enabled": bool(config.get("process_tree_monitoring", True)),
             "canary": canary_monitor.status(bool(config.get("canary_monitoring", False))),
         },
+        "defender": defender_health_monitor.status(),
+        "clamav": clamav_scanner.status(),
+        "filesystem_monitor": filesystem_event_monitor.status(
+            bool(config.get("download_monitoring", False))
+        ),
         "risk": explainable_risk(engine.db.list_events(200)),
     }
 
@@ -166,6 +185,48 @@ def scan_file(payload: ScanFileRequest):
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except (FileNotFoundError, OSError, PermissionError) as exc:
         return JSONResponse({"error": str(exc)}, status_code=404)
+
+@app.post("/api/scan-antivirus")
+def scan_file_with_antivirus(payload: AntivirusScanRequest):
+    try:
+        result = clamav_scanner.scan_file(Path(payload.path))
+    except ProtectedSystemPathError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if result["verdict"] == "infected":
+        event = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "kind": "clamav_detection",
+            "severity": "high",
+            "source": "ClamAV signature scan",
+            "target": Path(payload.path).name,
+            "confidence": None,
+            "evidence": json.dumps({
+                "detections": result["detections"],
+                "engine_version": result["engine_version"],
+                "database_version": result["database_version"],
+            }, sort_keys=True),
+            "response": "review_required_manual_approval",
+        }
+        engine.db.add(event)
+        engine.journal.append(event)
+    return result
+
+@app.post("/api/antivirus/clamav/update")
+def update_clamav_signatures(
+    x_morpheus_settings_password: str | None = Header(default=None),
+):
+    require_settings_password(x_morpheus_settings_password)
+    try:
+        return clamav_scanner.update_signatures()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 @app.post("/api/scan-folder")
 def scan_folder(payload: ScanFolderRequest):
@@ -418,16 +479,53 @@ def evaluate_processes():
         return detections
 
 def worker():
+    last_process_scan: float | None = None
+    last_download_scan: float | None = None
+    last_download_root: str | None = None
     while not worker_stop.is_set():
         try:
-            evaluate_processes()
-            download_monitor.scan_new_downloads(engine.config())
-            inbound_scan_monitor.poll(
-                engine.config(),
-                engine.firewall,
-                engine.db,
-                engine.journal,
+            config = engine.config()
+            interval = config["poll_interval_seconds"]
+            now = time.monotonic()
+            process_scan_due = (
+                last_process_scan is None
+                or now - last_process_scan >= interval
             )
+            if process_scan_due:
+                evaluate_processes()
+                last_process_scan = now
+
+            configured_download_root = str(
+                Path(config.get("download_directory") or Path.home() / "Downloads").expanduser()
+            )
+            if not config.get("download_monitoring", False):
+                last_download_scan = None
+                last_download_root = None
+            periodic_download_scan_due = (
+                config.get("download_monitoring", False)
+                and (
+                    last_download_scan is None
+                    or configured_download_root != last_download_root
+                    or now - last_download_scan >= interval
+                )
+            )
+            if periodic_download_scan_due:
+                download_monitor.scan_new_downloads(config)
+                last_download_scan = now
+                last_download_root = configured_download_root
+
+            filesystem_scan_due = filesystem_event_monitor.poll(config, worker_wakeup)
+            if filesystem_scan_due and not periodic_download_scan_due:
+                download_monitor.scan_new_downloads(config)
+
+            if process_scan_due:
+                inbound_scan_monitor.poll(
+                    config,
+                    engine.firewall,
+                    engine.db,
+                    engine.journal,
+                )
+            defender_health_monitor.poll(engine.db, engine.journal)
         except Exception:
             LOGGER.exception("Background security monitoring failed")
         try:
@@ -435,7 +533,11 @@ def worker():
         except (OSError, KeyError, ValueError, json.JSONDecodeError):
             LOGGER.exception("Unable to read the background scan interval")
             interval = 5
-        worker_stop.wait(interval)
+        watcher_delay = filesystem_event_monitor.seconds_until_scan()
+        if watcher_delay is not None:
+            interval = min(interval, max(watcher_delay, 0.1))
+        worker_wakeup.wait(interval)
+        worker_wakeup.clear()
 
 @app.on_event("startup")
 def start_worker():
@@ -443,12 +545,15 @@ def start_worker():
     if worker_thread and worker_thread.is_alive():
         return
     worker_stop.clear()
+    worker_wakeup.clear()
     worker_thread = threading.Thread(target=worker, name="morpheus-collector", daemon=True)
     worker_thread.start()
 
 @app.on_event("shutdown")
 def stop_worker():
     worker_stop.set()
+    worker_wakeup.set()
+    filesystem_event_monitor.stop()
     if worker_thread:
         worker_thread.join(timeout=2)
 

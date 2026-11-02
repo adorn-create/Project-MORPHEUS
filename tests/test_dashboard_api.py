@@ -34,6 +34,9 @@ def test_dashboard_renders_background_monitoring_and_folder_picker():
     assert 'id="startupReviewButton"' in response.text
     assert 'id="startupReviewResults"' in response.text
     assert 'id="riskLevel"' in response.text
+    assert 'id="defenderHealthState"' in response.text
+    assert 'id="clamavHealthState"' in response.text
+    assert 'id="clamavScanButton"' in response.text
     assert "small built-in exact test signature" in response.text
     assert "no Ollama" in response.text
     assert "not a general-purpose generative AI" in response.text
@@ -49,6 +52,80 @@ def test_scan_endpoint_returns_detection_results(monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == {"detected": detections, "processes_checked": 27}
+
+def test_clamav_scan_endpoint_records_detection_for_review(tmp_path, monkeypatch):
+    target = tmp_path / "sample.exe"
+    target.write_bytes(b"sample")
+    result = {
+        "path": str(target),
+        "verdict": "infected",
+        "detections": ["Win.Test.Detection"],
+        "engine_version": "1.4.3",
+        "database_version": "27900",
+        "database_updated": "Mon Nov  2 08:00:00 2026",
+        "message": "ClamAV detected a signature.",
+    }
+    recorded = []
+    monkeypatch.setattr(main.clamav_scanner, "scan_file", lambda path: result)
+    monkeypatch.setattr(main.engine.db, "add", recorded.append)
+    monkeypatch.setattr(main.engine.journal, "append", recorded.append)
+
+    response = TestClient(main.app).post(
+        "/api/scan-antivirus",
+        json={"path": str(target)},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == result
+    assert recorded[0]["kind"] == "clamav_detection"
+    assert recorded[0]["response"] == "review_required_manual_approval"
+    assert "Win.Test.Detection" in recorded[0]["evidence"]
+    assert len(recorded) == 2
+
+
+def test_clamav_scan_endpoint_reports_scanner_unavailable(tmp_path, monkeypatch):
+    target = tmp_path / "sample.exe"
+    target.write_bytes(b"sample")
+    monkeypatch.setattr(
+        main.clamav_scanner,
+        "scan_file",
+        lambda path: (_ for _ in ()).throw(RuntimeError("ClamAV is not installed.")),
+    )
+
+    response = TestClient(main.app).post(
+        "/api/scan-antivirus",
+        json={"path": str(target)},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "ClamAV is not installed."
+
+def test_clamav_update_endpoint_runs_freshclam_on_owner_request(tmp_path, monkeypatch):
+    result = {
+        "completed": True,
+        "message": "FreshClam update check completed.",
+        "status": {"available": True},
+    }
+    monkeypatch.setattr(main, "SETTINGS_PASSWORD_PATH", tmp_path / "settings-password.json")
+    monkeypatch.setattr(main.clamav_scanner, "update_signatures", lambda: result)
+
+    response = TestClient(main.app).post("/api/antivirus/clamav/update")
+
+    assert response.status_code == 200
+    assert response.json() == result
+
+def test_clamav_update_endpoint_surfaces_freshclam_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "SETTINGS_PASSWORD_PATH", tmp_path / "settings-password.json")
+    monkeypatch.setattr(
+        main.clamav_scanner,
+        "update_signatures",
+        lambda: (_ for _ in ()).throw(RuntimeError("FreshClam update failed.")),
+    )
+
+    response = TestClient(main.app).post("/api/antivirus/clamav/update")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "FreshClam update failed."
 
 def test_code_review_endpoint_returns_local_rule_findings(tmp_path):
     source = tmp_path / "sample.py"
@@ -266,6 +343,36 @@ def test_settings_password_accepts_ten_characters_and_rejects_nine(monkeypatch, 
 
 def test_status_reports_background_monitoring(monkeypatch):
     monkeypatch.setattr(main.engine, "evaluate_once", lambda: [])
+    defender_status = {
+        "supported": True,
+        "available": True,
+        "healthy": True,
+        "checked_at": "2026-11-01T10:00:00Z",
+        "signature_age_days": 1,
+        "issues": [],
+        "message": "Microsoft Defender protections are on and signatures are current.",
+        "last_error": None,
+    }
+    monkeypatch.setattr(main.defender_health_monitor, "status", lambda: defender_status)
+    clamav_status = {
+        "available": True,
+        "executable": "C:\\Program Files\\ClamAV\\clamscan.exe",
+        "engine_version": "1.4.3",
+        "database_version": "27900",
+        "database_updated": "Mon Nov  2 08:00:00 2026",
+        "message": "ClamAV 1.4.3 is ready.",
+        "last_error": None,
+    }
+    monkeypatch.setattr(main.clamav_scanner, "status", lambda: clamav_status)
+    filesystem_status = {
+        "enabled": False,
+        "available": True,
+        "active": False,
+        "directory": None,
+        "message": "Off.",
+        "last_error": None,
+    }
+    monkeypatch.setattr(main.filesystem_event_monitor, "status", lambda enabled: filesystem_status)
     with TestClient(main.app) as client:
         response = client.get("/api/status")
 
@@ -279,6 +386,9 @@ def test_status_reports_background_monitoring(monkeypatch):
     assert response.json()["expansion"]["powershell"]["enabled"] is False
     assert response.json()["expansion"]["process_tree_enabled"] is True
     assert response.json()["expansion"]["canary"]["enabled"] is False
+    assert response.json()["defender"] == defender_status
+    assert response.json()["clamav"] == clamav_status
+    assert response.json()["filesystem_monitor"] == filesystem_status
 
 
 def test_risk_summary_endpoint_returns_explainable_score(monkeypatch):

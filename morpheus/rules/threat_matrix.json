@@ -51,6 +51,18 @@
       "inbound_port_scan": {
         "label": "Windows Firewall dropped probes across many ports",
         "weight": 30
+      },
+      "defender_protection_degraded": {
+        "label": "Microsoft Defender protection needs attention",
+        "weight": 35
+      },
+      "clamav_detection": {
+        "label": "ClamAV malware signature match",
+        "weight": 40
+      },
+      "download_clamav_detection": {
+        "label": "ClamAV signature match in a monitored folder",
+        "weight": 40
       }
     }
   },
