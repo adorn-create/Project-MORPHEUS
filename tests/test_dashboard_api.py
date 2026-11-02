@@ -157,6 +157,20 @@ def test_code_review_endpoint_returns_local_rule_findings(tmp_path):
     assert result["findings"][0]["line"] == 1
     assert "example-secret-value" not in response.text
 
+def test_code_review_endpoint_accepts_pyinstaller_spec_file(tmp_path):
+    source = tmp_path / "backend.spec"
+    source.write_text('subprocess.run("build", shell=True)\n', encoding="utf-8")
+
+    response = TestClient(main.app).post(
+        "/api/review-code",
+        json={"path": str(source)},
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["files_scanned"] == 1
+    assert result["findings"][0]["rule_id"] == "shell-command"
+
 
 def test_code_review_endpoint_rejects_non_source_file(tmp_path):
     target = tmp_path / "sample.exe"

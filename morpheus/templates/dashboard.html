@@ -164,6 +164,7 @@
     .firewall-rule { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 7px; color: #dce9f7; font: 13px Consolas, monospace; }
     .firewall-rule button { min-height: 34px; padding: 0 10px; color: #ffd5d9; border-color: #70404a; background: #2a171b; }
     .password-state { margin: 10px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .password-state.error { color: #ff9aa5; }
     .field-row input[type="text"] { min-width: 180px; }
     .danger { border-color: #70404a; background: #2a171b; color: #ffd5d9; }
     .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
@@ -266,7 +267,7 @@
           <button id="reviewCodeButton" type="button">Review source code offline</button>
           <input id="folderInput" type="file" webkitdirectory multiple hidden aria-label="Choose a folder to scan">
         </div>
-        <p class="password-state" id="clamavUpdateStatus" role="status" aria-live="polite">FreshClam signature updates are owner-triggered and use the installed ClamAV configuration.</p>
+        <p class="password-state" id="clamavUpdateStatus" role="status" aria-live="polite">Signature updates require the installed FreshClam updater and a passkey approval.</p>
         <p class="subtle">Morpheus checks supported code for common security mistakes entirely on this computer. It does not need or send code to an AI service. These rules can miss problems and are not an antivirus scan.</p>
         <div class="result" id="scanResult" role="status" aria-live="polite">Enter a file path or choose a folder to analyze.</div>
         <div class="folder-results" id="folderResults"></div>
@@ -905,6 +906,7 @@ async function refreshDashboard(includeFirewall = false) {
   document.getElementById('defenderHealthDetail').textContent =
     defender.message || 'Microsoft Defender status is unavailable.';
   const clamav = status.clamav || {};
+  const clamavStatusMessage = clamav.message || 'ClamAV status is unavailable.';
   document.getElementById('clamavHealthState').textContent =
     !clamav.available
       ? 'Not available'
@@ -912,9 +914,22 @@ async function refreshDashboard(includeFirewall = false) {
         ? 'Update needed'
         : 'Ready';
   document.getElementById('clamavHealthDetail').textContent =
-    clamav.message || 'ClamAV status is unavailable.';
+    clamavStatusMessage;
   clamavScanButton.disabled = !clamav.available;
   clamavUpdateButton.disabled = !clamav.updater_available;
+  clamavScanButton.title = clamav.available
+    ? 'Scan the selected file using the installed ClamAV engine.'
+    : 'Install ClamAV (clamscan) to enable file scanning.';
+  clamavUpdateButton.title = clamav.updater_available
+    ? 'Update ClamAV signatures; a passkey approval is required.'
+    : 'Install FreshClam to enable signature updates.';
+  if (!clamav.available || !clamav.updater_available) {
+    const missing = [];
+    if (!clamav.available) missing.push('ClamAV scanner (clamscan)');
+    if (!clamav.updater_available) missing.push('FreshClam updater');
+    document.getElementById('clamavUpdateStatus').textContent =
+      `Unavailable until installed: ${missing.join(' and ')}. These are separate programs and are not bundled with Morpheus.`;
+  }
   const filesystem = status.filesystem_monitor || {};
   document.getElementById('filesystemMonitorStatus').textContent =
     filesystem.message || 'Selected-folder event monitoring status unavailable.';
@@ -927,6 +942,10 @@ async function refreshDashboard(includeFirewall = false) {
   document.getElementById('downloadMonitorState').textContent = status.monitoring.downloads_enabled ? 'Folder file checks: On' : 'Folder file checks: Off';
   document.getElementById('inboundScanStatus').textContent =
     status.monitoring.inbound_scan_protection?.message || 'Inbound scan protection status unavailable.';
+  if (!status.config.automatic_inbound_scan_blocking && !passkeyConfigured) {
+    document.getElementById('inboundScanStatus').textContent =
+      'Off. Enroll a passkey in the owner controls before enabling automatic firewall blocking.';
+  }
   inboundScanBlocking.checked = Boolean(status.config.automatic_inbound_scan_blocking);
   downloadDirectoryPath.value = status.monitoring.download_directory || '';
   document.getElementById('quarantineState').textContent = status.config.automatic_quarantine ? 'On' : 'Off';
@@ -1334,6 +1353,7 @@ async function updateConfigFromToggle(toggle, change, errorLabel) {
     document.getElementById('inboundScanStatus').textContent = config.automatic_inbound_scan_blocking
       ? 'Enabled. Requires new dropped-packet entries in the Windows Firewall log.'
       : 'Off. No inbound firewall log is being monitored.';
+    document.getElementById('inboundScanStatus').classList.remove('error');
     document.getElementById('dnsMonitorStatus').textContent = config.dns_entropy_monitoring
       ? 'Enabled. New DNS cache entries are reviewed locally.'
       : 'Off. No DNS names are being checked.';
@@ -1346,6 +1366,14 @@ async function updateConfigFromToggle(toggle, change, errorLabel) {
   } catch (error) {
     toggle.checked = previous;
     scanResult.textContent = `${errorLabel}: ${error.message}`;
+    if (toggle.id === 'inboundScanBlocking') {
+      const status = document.getElementById('inboundScanStatus');
+      status.classList.add('error');
+      status.textContent = `${errorLabel}: ${error.message}`;
+      if (error.message.includes('Register a passkey')) {
+        status.textContent += ' Enroll a passkey in the owner controls, then try again.';
+      }
+    }
   } finally {
     toggle.disabled = false;
   }

@@ -6,7 +6,7 @@
       "kind": "credential_assignment",
       "title": "Potential hard-coded credential",
       "severity": "high",
-      "extensions": [".py"],
+      "extensions": [".py", ".spec"],
       "keywords": ["api_key", "access_token", "auth_token", "client_secret", "password", "passwd", "secret"],
       "remediation": "Move credentials to a protected secret store or environment-based configuration, and rotate any real credential."
     },
@@ -15,7 +15,7 @@
       "kind": "private_key_literal",
       "title": "Private key material in source",
       "severity": "critical",
-      "extensions": [".py"],
+      "extensions": [".py", ".spec"],
       "markers": ["-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN EC PRIVATE KEY-----", "-----BEGIN OPENSSH PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----"],
       "remediation": "Remove the key from source control, revoke or rotate it, and load it from a protected secret store."
     },
@@ -24,7 +24,7 @@
       "kind": "dynamic_evaluation",
       "title": "Dynamic code evaluation",
       "severity": "high",
-      "extensions": [".py"],
+      "extensions": [".py", ".spec"],
       "calls": ["eval", "exec"],
       "remediation": "Avoid evaluating untrusted text as code; use a constrained parser or explicit operation mapping."
     },
@@ -33,7 +33,7 @@
       "kind": "shell_execution",
       "title": "Subprocess uses a command shell",
       "severity": "high",
-      "extensions": [".py"],
+      "extensions": [".py", ".spec"],
       "calls": ["subprocess.run", "subprocess.Popen", "subprocess.call", "subprocess.check_call", "subprocess.check_output", "os.system"],
       "remediation": "Pass an argument list with shell=False and validate each argument; avoid building commands from user input."
     },
@@ -42,7 +42,7 @@
       "kind": "call",
       "title": "Unsafe pickle deserialization",
       "severity": "high",
-      "extensions": [".py"],
+      "extensions": [".py", ".spec"],
       "calls": ["pickle.load", "pickle.loads", "pickle.Unpickler"],
       "remediation": "Do not deserialize pickle data from untrusted sources; use a data-only format and validate its schema."
     },
@@ -51,7 +51,7 @@
       "kind": "unsafe_yaml",
       "title": "Potentially unsafe YAML loading",
       "severity": "high",
-      "extensions": [".py"],
+      "extensions": [".py", ".spec"],
       "calls": ["yaml.load"],
       "remediation": "Use yaml.safe_load for untrusted YAML, or explicitly configure a safe loader."
     },
@@ -60,7 +60,7 @@
       "kind": "disabled_tls",
       "title": "TLS certificate verification disabled",
       "severity": "high",
-      "extensions": [".py"],
+      "extensions": [".py", ".spec"],
       "false_keywords": ["verify", "check_hostname"],
       "constant_values": ["ssl.CERT_NONE"],
       "remediation": "Keep certificate and hostname verification enabled; fix the certificate chain instead of bypassing validation."
@@ -70,7 +70,7 @@
       "kind": "call",
       "title": "Weak cryptographic hash",
       "severity": "medium",
-      "extensions": [".py"],
+      "extensions": [".py", ".spec"],
       "calls": ["hashlib.md5", "hashlib.sha1"],
       "remediation": "Use SHA-256 or a modern password-hashing scheme as appropriate; MD5 and SHA-1 are not suitable for security decisions."
     },
@@ -88,7 +88,7 @@
       "kind": "sql_sink",
       "title": "Potential unparameterized SQL query",
       "severity": "high",
-      "extensions": [".py"],
+      "extensions": [".py", ".spec"],
       "calls": ["execute", "executemany"],
       "taint_sources": ["input", "builtins.input", "os.getenv", "os.environ.get", "sys.argv", "request.args.get", "request.form.get", "request.values.get", "request.query_params.get", "request.get_json", "request.json"],
       "remediation": "Use parameterized SQL queries instead of interpolating values into query strings."

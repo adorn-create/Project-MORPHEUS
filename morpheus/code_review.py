@@ -18,7 +18,7 @@ RULE_SCAN_OVERLAP_CHARS = 2 * 1024
 CODE_EXTENSIONS = {
     ".c", ".cc", ".cpp", ".cs", ".go", ".h", ".hpp", ".java", ".js",
     ".jsx", ".kt", ".php", ".py", ".rb", ".rs", ".sh", ".sql", ".ts",
-    ".tsx", ".vue", ".yaml", ".yml",
+    ".tsx", ".vue", ".yaml", ".yml", ".spec",
 }
 IGNORED_DIRECTORIES = {
     ".git", ".hg", ".svn", ".venv", "build", "dist", "node_modules",
@@ -498,7 +498,7 @@ class CodeReview:
         return "Morpheus offline AST and JSON rules v2"
 
     def _review_file(self, path: Path) -> list[dict]:
-        if path.suffix.casefold() == ".py":
+        if path.suffix.casefold() in {".py", ".spec"}:
             source = path.read_text(encoding="utf-8-sig")
             return _python_findings(path, source, self.rules)
 

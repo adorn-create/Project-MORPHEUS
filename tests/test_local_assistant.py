@@ -51,3 +51,12 @@ def test_offline_assistant_explains_optional_clamav_engine_and_database():
     assert "FreshClam" in answer
     assert "does not bundle ClamAV" in answer
     assert "does not automatically quarantine" in answer
+
+def test_offline_assistant_explains_common_malware_entry_paths():
+    answer = OfflineAssistant().chat(
+        "can you explain how a malware can get in to my pc"
+    )
+
+    assert "phishing links or attachments" in answer
+    assert "unsafe downloads" in answer
+    assert "Keep Microsoft Defender" in answer

@@ -38,6 +38,23 @@ def test_code_review_ignores_comment_only_matches(tmp_path):
 
     assert result["findings"] == []
 
+def test_code_review_accepts_python_based_pyinstaller_spec_files(tmp_path):
+    source = tmp_path / "backend.spec"
+    source.write_text(
+        'import subprocess\n'
+        'api_key = "sample-secret-value"\n'
+        'subprocess.run("build-command", shell=True)\n',
+        encoding="utf-8",
+    )
+
+    result = CodeReview().review_path(source)
+
+    assert result["files_scanned"] == 1
+    assert {finding["rule_id"] for finding in result["findings"]} == {
+        "hardcoded-credential",
+        "shell-command",
+    }
+
 
 def test_code_review_folder_only_reviews_source_files(tmp_path):
     root = tmp_path / "project"

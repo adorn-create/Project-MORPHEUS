@@ -17,6 +17,8 @@ class Element {
         if (enabled) this.classes.add(name);
         else this.classes.delete(name);
       },
+      add: name => this.classes.add(name),
+      remove: name => this.classes.delete(name),
       contains: name => this.classes.has(name),
     };
     this.value = '';
@@ -71,6 +73,8 @@ const ids = [
   'canaryMonitorStatus', 'processTree', 'riskLevel', 'riskDetails',
   'startupReviewButton', 'startupReviewResults',
   'inboundScanBlocking', 'inboundScanStatus',
+  'clamavScanButton', 'clamavUpdateButton', 'clamavHealthState',
+  'clamavHealthDetail', 'clamavUpdateStatus',
   'assistantStatus', 'assistantConversation',
   'assistantForm', 'assistantQuestion', 'sendAssistantQuestion',
   'downloadDirectoryPath', 'browseDownloadFolderButton',
@@ -87,7 +91,9 @@ const ids = [
 const elements = new Map(ids.map(id => [id, new Element(id)]));
 const calls = [];
 let passwordConfigured = false;
-let passkeyConfigured = true;
+let passkeyConfigured = false;
+let clamavAvailable = false;
+let freshclamAvailable = false;
 let workerAvailable = false;
 let refreshTimer = null;
 let eventsData = [];
@@ -197,8 +203,11 @@ async function fetch(url, options = {}) {
         message: 'Microsoft Defender protections are on and signatures are current.',
       },
       clamav: {
-        available: true,
-        message: 'ClamAV 1.4.3 is ready.',
+        available: clamavAvailable,
+        updater_available: freshclamAvailable,
+        message: clamavAvailable
+          ? 'ClamAV 1.4.3 is ready.'
+          : 'ClamAV is not installed or clamscan.exe is not on PATH.',
       },
       filesystem_monitor: {
         enabled: false,
@@ -365,8 +374,19 @@ async function main() {
 
   assert.equal(elements.get('runScanButton').listeners.has('click'), true);
   assert.equal(elements.has('fullscreenButton'), false, 'F11 remains a shortcut without an on-screen button');
-  assert.equal(elements.get('clamavHealthState').textContent, 'Ready');
+  assert.equal(elements.get('clamavHealthState').textContent, 'Not available');
+  assert.equal(elements.get('clamavScanButton').disabled, true);
+  assert.equal(elements.get('clamavUpdateButton').disabled, true);
+  assert.match(elements.get('clamavUpdateStatus').textContent, /ClamAV scanner.*FreshClam updater/);
   assert.equal(elements.get('defenderHealthState').textContent, 'Healthy');
+  assert.match(elements.get('inboundScanStatus').textContent, /Enroll a passkey/);
+  passkeyConfigured = true;
+  clamavAvailable = true;
+  freshclamAvailable = true;
+  await elements.get('refreshButton').dispatch('click');
+  assert.equal(elements.get('clamavHealthState').textContent, 'Ready');
+  assert.equal(elements.get('clamavScanButton').disabled, false);
+  assert.equal(elements.get('clamavUpdateButton').disabled, false);
   fullScreenListeners[0](true);
   assert.equal(document.body.classList.contains('is-fullscreen'), true);
   fullScreenListeners[0](false);

@@ -3,6 +3,21 @@ import re
 
 _INTENTS = (
     (
+        (
+            "malware get into", "malware get in", "malware can get in",
+            "malware enter", "how malware", "malware infection",
+            "infect my pc", "infect my computer",
+        ),
+        "Malware commonly reaches a PC through convincing phishing links or attachments, "
+        "unsafe downloads, malicious ads or websites, unpatched software, infected USB "
+        "drives, or stolen account credentials. It may also arrive bundled with software "
+        "from an untrusted source. Keep Microsoft Defender and Windows security updates "
+        "enabled, download apps only from sources you trust, avoid unexpected attachments "
+        "and prompts, use a standard (non-administrator) account for everyday work, and "
+        "keep backups of important files. Morpheus's heuristic checks can miss threats "
+        "and raise false alarms; they do not replace antivirus protection.",
+    ),
+    (
         ("clamav", "signature feed", "signature database", "freshclam"),
         "Morpheus can use an installed ClamAV scanner and its signature database "
         "for on-demand and selected-folder scans. Install ClamAV from its official "
