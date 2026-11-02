@@ -11,7 +11,7 @@
     "build:uninstall-helper": "node scripts/build-uninstall-helper.js",
     "build:clamav": "node scripts/build-clamav.js",
     "build:win": "npm run build:icons && npm run build:backend && npm run build:firewall-worker && npm run build:uninstall-helper && npm run build:clamav && electron-builder --win nsis --publish never",
-    "test:ui": "node tests/test-dashboard-ui.cjs"
+    "test:ui": "node tests/test-dashboard-ui.cjs && node tests/test-download-page.cjs"
   },
   "devDependencies": {
     "electron": "^45.1.0",

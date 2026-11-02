@@ -1,6 +1,6 @@
 const repository = 'adorn-create/Project-MORPHEUS';
 const releaseUrl = `https://api.github.com/repos/${repository}/releases/latest`;
-const currentInstallerUrl = `https://github.com/${repository}/releases/download/v0.1.4/Morpheus.Defense.Setup.0.1.4.exe`;
+const releasesPageUrl = `https://github.com/${repository}/releases/latest`;
 const headerDownload = document.querySelector('#header-download');
 const headerDownloadLabel = document.querySelector('#header-download-label');
 const downloadButton = document.querySelector('#download-button');
@@ -13,10 +13,10 @@ function formatBytes(bytes) {
 }
 
 function useReleaseFallback(message) {
-  headerDownload.href = currentInstallerUrl;
-  headerDownloadLabel.textContent = 'Download .exe';
-  downloadButton.href = currentInstallerUrl;
-  downloadLabel.textContent = 'Download Windows App (.exe)';
+  headerDownload.href = releasesPageUrl;
+  headerDownloadLabel.textContent = 'View latest release';
+  downloadButton.href = releasesPageUrl;
+  downloadLabel.textContent = 'View latest Windows release';
   releaseStatus.textContent = message;
 }
 
@@ -27,7 +27,7 @@ async function loadLatestRelease() {
     });
     if (!response.ok) {
       if (response.status === 404) {
-        useReleaseFallback('Direct download available · v0.1.4');
+        useReleaseFallback('No published installer found. View GitHub releases.');
         return;
       }
       throw new Error(`GitHub returned ${response.status}`);
@@ -38,18 +38,19 @@ async function loadLatestRelease() {
       /^Morpheus[ ._-]+Defense[ ._-]+Setup[ ._-]+.+\.exe$/i.test(asset.name),
     );
     if (!installer) {
-      useReleaseFallback('Direct download available · v0.1.4');
+      useReleaseFallback('No Windows installer found in the latest release. View release assets.');
       return;
     }
 
     headerDownload.href = installer.browser_download_url;
     downloadButton.href = installer.browser_download_url;
     headerDownloadLabel.textContent = 'Download .exe';
+    downloadLabel.textContent = 'Download Windows App (.exe)';
     const size = formatBytes(installer.size);
     const version = release.tag_name ? `Latest release ${release.tag_name}` : 'Latest Windows release';
     releaseStatus.textContent = `${version}${size ? ` · ${size}` : ''}`;
   } catch (error) {
-    useReleaseFallback('Latest release check unavailable · direct download available');
+    useReleaseFallback('Latest release check unavailable. View GitHub releases.');
     console.error('Unable to load the latest Morpheus Defense release:', error);
   }
 }
