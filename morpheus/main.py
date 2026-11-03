@@ -108,7 +108,7 @@ inbound_scan_monitor = WindowsFirewallLogMonitor()
 defender_health_monitor = DefenderHealthMonitor()
 filesystem_event_monitor = SelectedFolderEventMonitor()
 templates = Jinja2Templates(directory=str(ROOT / "morpheus" / "templates"))
-app = FastAPI(title="Morpheus Defense", version="0.1.4")
+app = FastAPI(title="Morpheus Defense", version="0.2.0")
 worker_stop = threading.Event()
 worker_wakeup = threading.Event()
 worker_thread: threading.Thread | None = None
