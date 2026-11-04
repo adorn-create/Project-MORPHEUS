@@ -16,6 +16,7 @@
     </script>
     <script defer src="/_vercel/insights/script.js"></script>
     <script src="download.js" defer></script>
+    <script src="reviews.js" defer></script>
   </head>
   <body>
     <header class="site-header">
@@ -26,8 +27,9 @@
       <nav class="header-links" aria-label="Main navigation">
         <a href="#features">Features</a>
         <a href="#install">Install</a>
+        <a href="#reviews">Reviews</a>
         <a id="header-download" href="https://github.com/adorn-create/Project-MORPHEUS/releases">
-          <span id="header-download-label">Checking download…</span>
+          <span id="header-download-label">Download .exe</span>
           <span aria-hidden="true">↓</span>
         </a>
       </nav>
@@ -55,7 +57,7 @@
             <span class="platform-note">Windows 10/11 <span aria-hidden="true">·</span> 64-bit</span>
           </div>
           <p class="release-status" id="release-status" aria-live="polite">
-            Checking the latest published installer…
+            View the latest published Windows installer.
           </p>
           <p class="trust-note">
             <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 2.8 8 7 10 4.2-2 7-5.5 7-10V6l-7-3Z" /><path d="m9 12 2 2 4-4" /></svg>
@@ -138,6 +140,42 @@
           <li><span>02</span><div><strong>Install</strong><p>Approve the installer when Windows asks. It installs Morpheus machine-wide.</p></div></li>
           <li><span>03</span><div><strong>Review</strong><p>Open the dashboard and review alerts before taking action.</p></div></li>
         </ol>
+      </section>
+
+      <section class="review-section" id="reviews">
+        <div class="review-heading">
+          <div>
+            <span class="eyebrow">USER FEEDBACK</span>
+            <h2>Share your Morpheus experience.</h2>
+          </div>
+          <p>Reviews help improve the app. Submitting opens a public GitHub issue, so only share information you are comfortable publishing.</p>
+        </div>
+        <form class="review-form" id="review-form">
+          <fieldset>
+            <legend>Rating</legend>
+            <div class="rating-options" role="radiogroup" aria-label="Choose a rating">
+              <input type="radio" id="rating-1" name="rating" value="1" required>
+              <label for="rating-1" aria-label="1 out of 5 stars">★</label>
+              <input type="radio" id="rating-2" name="rating" value="2">
+              <label for="rating-2" aria-label="2 out of 5 stars">★</label>
+              <input type="radio" id="rating-3" name="rating" value="3">
+              <label for="rating-3" aria-label="3 out of 5 stars">★</label>
+              <input type="radio" id="rating-4" name="rating" value="4">
+              <label for="rating-4" aria-label="4 out of 5 stars">★</label>
+              <input type="radio" id="rating-5" name="rating" value="5">
+              <label for="rating-5" aria-label="5 out of 5 stars">★</label>
+            </div>
+          </fieldset>
+          <label>
+            Display name <span>(optional)</span>
+            <input type="text" name="name" maxlength="60" autocomplete="name" placeholder="How should we credit you?">
+          </label>
+          <label>
+            Your review
+            <textarea name="review" maxlength="2000" minlength="10" required placeholder="What worked well, and what should be improved?"></textarea>
+          </label>
+          <button class="button button-primary review-submit" type="submit">Continue to GitHub review</button>
+        </form>
       </section>
 
       <section class="notice" aria-label="Important information">

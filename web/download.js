@@ -27,7 +27,7 @@ async function loadLatestRelease() {
     });
     if (!response.ok) {
       if (response.status === 404) {
-        useReleaseFallback('No published installer found. View GitHub releases.');
+        useReleaseFallback('Latest installer: view the published GitHub release.');
         return;
       }
       throw new Error(`GitHub returned ${response.status}`);
@@ -50,7 +50,7 @@ async function loadLatestRelease() {
     const version = release.tag_name ? `Latest release ${release.tag_name}` : 'Latest Windows release';
     releaseStatus.textContent = `${version}${size ? ` · ${size}` : ''}`;
   } catch (error) {
-    useReleaseFallback('Latest release check unavailable. View GitHub releases.');
+    useReleaseFallback('View the latest installer and release notes on GitHub.');
     console.error('Unable to load the latest Morpheus Defense release:', error);
   }
 }

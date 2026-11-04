@@ -26,6 +26,12 @@ async function runDownloadScript(releaseResponse) {
 }
 
 async function main() {
+  const pageHtml = fs.readFileSync('web/index.html', 'utf8');
+  assert.ok(pageHtml.includes('id="reviews"'));
+  assert.ok(pageHtml.includes('id="review-form"'));
+  assert.ok(pageHtml.includes('Continue to GitHub review'));
+  assert.ok(pageHtml.includes('reviews.js'));
+
   const release = await runDownloadScript({
     ok: true,
     json: async () => ({

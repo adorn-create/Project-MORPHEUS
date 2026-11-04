@@ -177,7 +177,7 @@ h1 {
   min-height: 390px;
   place-items: center;
   isolation: isolate;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .orb {
@@ -335,6 +335,121 @@ h1 {
 .install-steps strong { font-size: 13px; }
 .install-steps p { margin: 5px 0 0; color: #91a1b6; font-size: 11px; line-height: 1.6; }
 
+.review-section {
+  display: grid;
+  grid-template-columns: 0.8fr 1fr;
+  gap: 70px;
+  align-items: start;
+  padding: 65px 0;
+  border-top: 1px solid var(--line);
+}
+
+.review-heading h2 {
+  margin: 15px 0 12px;
+  font: 600 30px/1.2 "Manrope", sans-serif;
+  letter-spacing: -0.04em;
+}
+
+.review-heading p {
+  max-width: 360px;
+  color: #93a3b8;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.review-form {
+  display: grid;
+  gap: 15px;
+  padding: 22px;
+  border: 1px solid rgba(144, 174, 218, 0.14);
+  border-radius: 12px;
+  background: rgba(17, 31, 52, 0.56);
+}
+
+.review-form fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.review-form legend,
+.review-form label {
+  color: #c7d4e7;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.review-form label span {
+  color: #8798ae;
+  font-weight: 400;
+}
+
+.review-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.rating-options {
+  display: flex;
+  margin-top: 7px;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+}
+
+.rating-options input {
+  position: absolute;
+  opacity: 0;
+}
+
+.rating-options label {
+  cursor: pointer;
+  color: #52627a;
+  font-size: 25px;
+  line-height: 1;
+  transition: color 120ms ease, transform 120ms ease;
+}
+
+.rating-options label:hover,
+.rating-options label:hover ~ label,
+.rating-options input:checked ~ label {
+  color: #f0c579;
+  transform: translateY(-1px);
+}
+
+.review-form input[type="text"],
+.review-form textarea {
+  width: 100%;
+  border: 1px solid rgba(144, 174, 218, 0.18);
+  border-radius: 8px;
+  outline: none;
+  background: rgba(7, 17, 31, 0.7);
+  color: #eef4ff;
+  font: 12px/1.5 "DM Sans", "Segoe UI", sans-serif;
+}
+
+.review-form input[type="text"] {
+  height: 42px;
+  padding: 0 12px;
+}
+
+.review-form textarea {
+  min-height: 112px;
+  resize: vertical;
+  padding: 10px 12px;
+}
+
+.review-form input:focus,
+.review-form textarea:focus {
+  border-color: #66a5ff;
+  box-shadow: 0 0 0 3px rgba(102, 165, 255, 0.12);
+}
+
+.review-submit {
+  justify-self: start;
+  cursor: pointer;
+  font-family: inherit;
+}
+
 .notice {
   display: flex;
   align-items: center;
@@ -379,6 +494,7 @@ h1 {
   .hero-visual { min-height: 370px; }
   .floating-tag { right: max(0px, calc((100% - 430px) / 2)); }
   .install-section { gap: 35px; }
+  .review-section { gap: 35px; }
 }
 
 @media (max-width: 600px) {
@@ -388,7 +504,8 @@ h1 {
   .brand-mark { width: 27px; height: 27px; }
   .header-links { gap: 15px; }
   .header-links a { font-size: 10px; }
-  .header-links a:first-child { display: none; }
+  .header-links a:first-child,
+  .header-links a:nth-child(3) { display: none; }
   .hero { min-height: initial; padding: 57px 0 50px; }
   h1 { font-size: clamp(44px, 12vw, 58px); }
   .hero-description { font-size: 14px; }
@@ -402,6 +519,8 @@ h1 {
   .feature-item p { max-width: 390px; }
   .install-section { grid-template-columns: 1fr; gap: 21px; padding: 55px 0; }
   .install-section h2 { font-size: 27px; }
+  .review-section { grid-template-columns: 1fr; gap: 21px; padding: 55px 0; }
+  .review-heading h2 { font-size: 27px; }
   .notice { align-items: flex-start; flex-wrap: wrap; }
   .notice p { flex-basis: calc(100% - 40px); }
   .notice a { margin-left: 35px; }
