@@ -244,7 +244,7 @@ class ClamAVScanner:
             "status": status,
         }
 
-    def scan_file(self, path: Path) -> dict:
+    def scan_file(self, path: Path, *, max_bytes: int = 512 * 1024 * 1024) -> dict:
         target = Path(path).expanduser()
         try:
             resolved = target.resolve(strict=True)
@@ -256,6 +256,9 @@ class ClamAVScanner:
             )
         if not resolved.is_file():
             raise ValueError("ClamAV scan requires a single existing file.")
+        size = resolved.stat().st_size
+        if size > max_bytes:
+            raise ValueError(f"File exceeds the configured scan limit of {max_bytes} bytes.")
 
         status = self.status()
         if not status["available"]:

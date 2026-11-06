@@ -4,6 +4,7 @@ import os
 import subprocess
 import time
 from collections.abc import Callable
+from pathlib import Path
 
 from .collector import utcnow
 
@@ -19,6 +20,75 @@ _PROTECTION_FIELDS = {
     "BehaviorMonitorEnabled": "Behavior monitoring is disabled",
     "IoavProtectionEnabled": "Download and attachment scanning is disabled",
 }
+
+
+def find_defender_command() -> str | None:
+    if os.name != "nt":
+        return None
+    candidates = [
+        Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Windows Defender" / "MpCmdRun.exe",
+        Path(os.environ.get("ProgramW6432", "C:/Program Files")) / "Windows Defender" / "MpCmdRun.exe",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate.resolve())
+    return None
+
+
+def scan_file_with_defender(path: Path, *, max_bytes: int = 512 * 1024 * 1024) -> dict:
+    if os.name != "nt":
+        raise RuntimeError("Microsoft Defender command-line scanning is available only on Windows.")
+    resolved = Path(path).expanduser().resolve(strict=True)
+    if not resolved.is_file():
+        raise ValueError("Microsoft Defender scan requires a single existing file.")
+    if resolved.stat().st_size > max_bytes:
+        raise ValueError(f"File exceeds the configured scan limit of {max_bytes} bytes.")
+    executable = find_defender_command()
+    if executable is None:
+        raise RuntimeError("Microsoft Defender MpCmdRun.exe was not found.")
+    result = subprocess.run(
+        [executable, "-Scan", "-ScanType", "3", "-File", str(resolved)],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    if result.returncode not in {0, 2}:
+        detail = result.stderr.strip() or result.stdout.strip() or "Microsoft Defender returned no result."
+        raise RuntimeError(detail[:500])
+    return {
+        "path": str(resolved),
+        "verdict": "infected" if result.returncode == 2 else "clean",
+        "message": (
+            "Microsoft Defender detected a threat during the custom file scan."
+            if result.returncode == 2
+            else "Microsoft Defender found no matching threat during the custom file scan."
+        ),
+    }
+
+
+def update_defender_signatures() -> dict:
+    if os.name != "nt":
+        raise RuntimeError("Microsoft Defender updates are available only on Windows.")
+    executable = find_defender_command()
+    if executable is None:
+        raise RuntimeError("Microsoft Defender MpCmdRun.exe was not found.")
+    result = subprocess.run(
+        [executable, "-SignatureUpdate"],
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "Signature update failed."
+        raise RuntimeError(detail[:500])
+    return {
+        "completed": True,
+        "message": "Microsoft Defender signature update completed.",
+    }
 
 
 def parse_defender_status(data: object) -> dict:

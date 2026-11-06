@@ -55,18 +55,6 @@ _INTENTS = (
         "it. Morpheus does not prove a file is harmful.",
     ),
     (
-        ("firewall", "block address", "block ip", "internet address", "inbound scan", "port scan", "nmap"),
-        "Manual firewall rules block this computer from connecting out to an address. "
-        "It does not control another computer. "
-        "Separately, optional inbound scan protection can block a public IP after "
-        "Windows Firewall logs dropped probes to 10 or more distinct local ports "
-        "within 60 seconds. The installer offers an optional way to enable "
-        "dropped-packet logging; otherwise the owner must configure it manually. "
-        "It cannot identify Nmap or prove malicious intent. Use the "
-        "alert's Allow this IP action to remove the block. A wrong block can "
-        "interrupt network access.",
-    ),
-    (
         ("privacy", "private", "data", "upload", "internet", "online"),
         "Morpheus's built-in checks run on this computer. File and source-code "
         "checks do not send file contents to an online AI service. Local event "
@@ -105,14 +93,13 @@ _INTENTS = (
         "offline for a limited test signature and heuristic warning patterns, "
         "monitor selected folders, scan files with an optional installed ClamAV "
         "engine, review supported source code, "
-        "review Windows Firewall drops for optional inbound scan blocking, and "
         "explain alerts. These checks can miss threats and do not replace "
         "Microsoft Defender.",
     ),
     (
         ("hello", "hi", "hey", "good morning", "good afternoon"),
         "Hello! I can explain Morpheus alerts, file checks, code review, "
-        "quarantine, and firewall controls. I work offline and cannot change "
+        "and quarantine. I work offline and cannot change "
         "settings or take actions for you.",
     ),
 )
@@ -151,5 +138,5 @@ class OfflineAssistant:
             "I can answer common questions about Morpheus, but this built-in "
             "offline helper is not a general-purpose AI. Try asking about an "
             "alert, running apps, file scans, code review, privacy, quarantine, "
-            "or the firewall and inbound scan controls."
+            "or quarantine."
         )

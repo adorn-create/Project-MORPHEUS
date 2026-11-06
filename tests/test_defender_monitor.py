@@ -154,3 +154,38 @@ def test_non_windows_status_is_explicit_and_never_queries(monkeypatch):
 
     assert monitor.poll(EventStore(), Journal()) == []
     assert monitor.status()["supported"] is False
+
+
+def test_defender_file_scan_uses_custom_scan_and_never_quarantines(tmp_path, monkeypatch):
+    sample = tmp_path / "sample.exe"
+    sample.write_bytes(b"MZ")
+    monkeypatch.setattr(defender_monitor.os, "name", "nt")
+    monkeypatch.setattr(defender_monitor, "find_defender_command", lambda: "C:/Program Files/Windows Defender/MpCmdRun.exe")
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(defender_monitor.subprocess, "run", fake_run)
+
+    result = defender_monitor.scan_file_with_defender(sample)
+
+    assert result["verdict"] == "clean"
+    assert "-ScanType" in calls[0]
+    assert "3" in calls[0]
+    assert "-File" in calls[0]
+    assert str(sample) in calls[0]
+
+
+def test_defender_scan_enforces_configurable_file_limit(tmp_path, monkeypatch):
+    sample = tmp_path / "large.bin"
+    sample.write_bytes(b"12345")
+    monkeypatch.setattr(defender_monitor.os, "name", "nt")
+
+    try:
+        defender_monitor.scan_file_with_defender(sample, max_bytes=4)
+    except ValueError as exc:
+        assert "scan limit" in str(exc)
+    else:
+        raise AssertionError("The Defender file limit was not enforced")

@@ -68,6 +68,7 @@ const ids = [
   'reviewCodeButton', 'folderInput',
   'scanResult', 'folderResults', 'downloadMonitoring', 'quarantineDownloads',
   'automaticQuarantine', 'eventsBody', 'timeline', 'sysmonStatus',
+  'automaticIsolation', 'isolationState', 'isolatedFolderStatus',
   'dnsEntropyMonitoring', 'powershellLogMonitoring', 'processTreeMonitoring',
   'canaryMonitoring', 'dnsMonitorStatus', 'powershellMonitorStatus',
   'canaryMonitorStatus', 'processTree', 'riskLevel', 'riskDetails',
@@ -87,6 +88,9 @@ const ids = [
   'cancelOwnerPasswordButton', 'firewallRules', 'firewallWorkerState',
   'startFirewallWorkerButton', 'firewallActionStatus', 'addFirewallRuleButton',
   'firewallIp', 'scanPath',
+  'isolateSelectedFileButton', 'isolateSelectedFolderButton',
+  'refreshIsolationButton', 'isolationCategorySummary',
+  'isolationVaultList', 'isolationVaultStatus',
 ];
 const elements = new Map(ids.map(id => [id, new Element(id)]));
 const calls = [];
@@ -106,6 +110,7 @@ let processTreeData = {
 };
 let config = {
   automatic_quarantine: false,
+  automatic_isolation: false,
   download_monitoring: false,
   automatic_quarantine_downloads: false,
   dns_entropy_monitoring: false,
@@ -224,6 +229,15 @@ async function fetch(url, options = {}) {
     });
   }
   if (url === '/api/settings-password/status') return response({ configured: passwordConfigured });
+  if (url === '/api/quarantine/status') {
+    return response({
+      folder: 'C:\\Users\\Owner\\AppData\\Roaming\\Morpheus\\Isolated',
+      categories: ['files', 'apps', 'folders'],
+      item_count: 0,
+      category_counts: { files: 0, apps: 0, folders: 0 },
+    });
+  }
+  if (url === '/api/quarantine') return response([]);
   if (url === '/api/passkeys/status') {
     return response({
       configured: passkeyConfigured,
@@ -384,7 +398,6 @@ async function main() {
   assert.equal(elements.get('clamavUpdateButton').disabled, true);
   assert.match(elements.get('clamavUpdateStatus').textContent, /development mode/);
   assert.equal(elements.get('defenderHealthState').textContent, 'Healthy');
-  assert.match(elements.get('inboundScanStatus').textContent, /Enroll a passkey/);
   freshclamAvailable = true;
   clamavEngineVersion = '1.5.4';
   await elements.get('refreshButton').dispatch('click');
@@ -449,15 +462,16 @@ async function main() {
     total_processes: 1,
     truncated: false,
   };
-  const firewallReadsAfterManualRefresh = calls.filter(
-    call => call.url === '/api/firewall' && call.method === 'GET'
-  ).length;
-  assert.ok(firewallReadsAfterManualRefresh >= 1);
+  assert.equal(
+    calls.filter(call => call.url === '/api/firewall' && call.method === 'GET').length,
+    0,
+    'the dashboard no longer depends on Windows Firewall enumeration'
+  );
   refreshTimer();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(
     calls.filter(call => call.url === '/api/firewall' && call.method === 'GET').length,
-    firewallReadsAfterManualRefresh,
+    0,
     'background refresh does not rerun expensive firewall enumeration'
   );
   elements.get('scanPath').value = 'C:\\Users\\Owner\\sample.exe';
@@ -482,10 +496,6 @@ async function main() {
   await elements.get('browseFileButton').dispatch('click');
   assert.equal(elements.get('scanPath').value, 'C:\\Users\\Owner\\sample.exe');
 
-  const removeButton = elements.get('firewallRules').children[0].children[1];
-  await removeButton.dispatch('click');
-  assert.ok(calls.some(call => call.url === '/api/firewall/Morpheus-Block-012345abcdef' && call.method === 'DELETE'));
-
   await elements.get('settingsPasswordButton').dispatch('click');
   assert.equal(elements.get('settingsPasswordForm').hidden, false);
   elements.get('newOwnerPassword').value = 'Abcdef123';
@@ -498,14 +508,6 @@ async function main() {
   elements.get('confirmOwnerPassword').value = 'Abcdef1234';
   await elements.get('settingsPasswordForm').dispatch('submit', { preventDefault() {} });
   assert.ok(calls.some(call => call.url === '/api/settings-password' && call.method === 'POST'));
-
-  elements.get('ownerPasswordInput').value = 'Abcdef1234';
-  elements.get('firewallIp').value = '8.8.8.8';
-  await elements.get('addFirewallRuleButton').dispatch('click');
-  assert.ok(calls.some(call => call.url === '/api/firewall' && call.method === 'POST'));
-
-  await elements.get('startFirewallWorkerButton').dispatch('click');
-  assert.equal(workerAvailable, true);
 
   elements.get('ownerPasswordInput').value = 'a-long-owner-password';
   const quarantine = elements.get('automaticQuarantine');
@@ -549,31 +551,10 @@ async function main() {
   elements.get('canaryMonitoring').checked = true;
   await elements.get('canaryMonitoring').dispatch('change');
   assert.ok(calls.some(call => call.url === '/api/config' && JSON.parse(call.options.body).canary_monitoring === true));
-  elements.get('inboundScanBlocking').checked = true;
-  await elements.get('inboundScanBlocking').dispatch('change');
-  assert.ok(calls.some(call =>
-    call.url === '/api/config'
-    && JSON.parse(call.options.body).automatic_inbound_scan_blocking === true
-  ));
   assert.equal(elements.get('riskLevel').textContent, 'No recent warning signs');
   await elements.get('startupReviewButton').dispatch('click');
   assert.ok(calls.some(call => call.url === '/api/persistence/startup'));
   assert.equal(elements.get('startupReviewResults').children.length, 1);
-  eventsData = [{
-    timestamp: new Date().toISOString(),
-    kind: 'inbound_port_scan',
-    severity: 'high',
-    source: '1.2.3.4',
-    target: '192.168.1.25',
-    evidence: 'Windows Firewall dropped probes across ports.',
-    response: 'blocked_inbound:Morpheus-Scan-Block-012345abcdef',
-  }];
-  await elements.get('runScanButton').dispatch('click');
-  const alertRow = elements.get('eventsBody').children[0];
-  const allowButton = alertRow.lastElementChild.children.find(item => item.textContent === 'Allow this IP');
-  assert.ok(allowButton, 'blocked scan alert offers an owner allow action');
-  await allowButton.dispatch('click');
-  assert.ok(calls.some(call => call.url === '/api/firewall/allow' && call.method === 'POST'));
 }
 
 main().then(() => {

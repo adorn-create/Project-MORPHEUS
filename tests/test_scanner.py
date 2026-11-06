@@ -129,3 +129,47 @@ def test_folder_scan_is_bounded_and_reports_truncation(tmp_path, monkeypatch):
 
     assert len(result["results"]) == 1
     assert result["truncated"] is True
+
+
+def test_static_scanner_enforces_configurable_file_limit(tmp_path):
+    sample = tmp_path / "large.bin"
+    sample.write_bytes(b"12345")
+
+    try:
+        StaticScanner().scan_file(sample, max_bytes=4)
+    except ValueError as exc:
+        assert "scan limit" in str(exc)
+    else:
+        raise AssertionError("The configurable file limit was not enforced")
+
+
+def test_static_scanner_supports_cancelled_stream(tmp_path):
+    class OneChunkStream:
+        def read(self, size):
+            return b"x" * size
+
+    try:
+        StaticScanner().scan_stream(
+            OneChunkStream(),
+            "cancelled.bin",
+            is_cancelled=lambda: True,
+        )
+    except InterruptedError as exc:
+        assert "cancelled" in str(exc)
+    else:
+        raise AssertionError("Cancellation was not propagated")
+
+
+def test_folder_scan_reports_cancellation_instead_of_a_per_file_failure(tmp_path, monkeypatch):
+    sample = tmp_path / "sample.txt"
+    sample.write_text("sample", encoding="utf-8")
+    monkeypatch.setattr("morpheus.scanner.protected_system_roots", lambda: [])
+    result = StaticScanner().scan_folder(
+        tmp_path,
+        is_cancelled=lambda: True,
+    )
+
+    assert result["truncated"] is True
+    assert result["failures"] == [
+        {"name": str(tmp_path), "message": "Scan was cancelled."}
+    ]

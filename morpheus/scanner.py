@@ -3,12 +3,15 @@ import io
 import json
 import math
 import os
+import time
 from collections import Counter
 from pathlib import Path
 
 SCAN_CHUNK_SIZE = 1024 * 1024
 MAX_FOLDER_SCAN_FILES = 5000
 MAX_FOLDER_SCAN_DIRECTORIES = 20_000
+DEFAULT_MAX_FILE_BYTES = 512 * 1024 * 1024
+DEFAULT_MAX_FOLDER_BYTES = 5 * 1024 * 1024 * 1024
 PROTECTED_DIRECTORY_NAMES = {
     "$recycle.bin", "$winreagent", "boot", "config.msi", "efi",
     "msocache", "program files", "program files (x86)", "programdata",
@@ -116,21 +119,49 @@ class StaticScanner:
             seen_ids.add(signature_id)
             self.signatures.append({**signature, "pattern": pattern})
 
-    def scan_file(self, path: Path, *, protected_roots: list[Path] | None = None) -> dict:
+    def scan_file(
+        self,
+        path: Path,
+        *,
+        protected_roots: list[Path] | None = None,
+        max_bytes: int = DEFAULT_MAX_FILE_BYTES,
+        timeout_seconds: float = 180.0,
+        is_cancelled=None,
+    ) -> dict:
         path = Path(path)
         if is_protected_system_path(path, protected_roots=protected_roots):
             raise ProtectedSystemPathError("Windows system and protected application files are excluded from file scans.")
         if not path.exists() or not path.is_file():
             raise FileNotFoundError(path)
+        size = path.stat().st_size
+        if size > max_bytes:
+            raise ValueError(f"File exceeds the configured scan limit of {max_bytes} bytes.")
         with path.open("rb") as stream:
-            return self.scan_stream(stream, str(path), suffix=path.suffix.lower())
+            return self.scan_stream(
+                stream,
+                str(path),
+                suffix=path.suffix.lower(),
+                max_bytes=max_bytes,
+                timeout_seconds=timeout_seconds,
+                is_cancelled=is_cancelled,
+            )
 
-    def scan_stream(self, stream, name: str, *, suffix: str | None = None) -> dict:
+    def scan_stream(
+        self,
+        stream,
+        name: str,
+        *,
+        suffix: str | None = None,
+        max_bytes: int = DEFAULT_MAX_FILE_BYTES,
+        timeout_seconds: float = 180.0,
+        is_cancelled=None,
+    ) -> dict:
         if has_protected_folder_name(name):
             raise ProtectedSystemPathError("Windows system and protected application files are excluded from file scans.")
         digest = hashlib.sha256()
         entropy_counts = Counter()
         sample = bytearray()
+        started_at = time.monotonic()
         marker_bytes = (
             b"virtualallocex",
             b"writeprocessmemory",
@@ -149,6 +180,12 @@ class StaticScanner:
         try:
             for chunk in iter(lambda: stream.read(SCAN_CHUNK_SIZE), b""):
                 size += len(chunk)
+                if size > max_bytes:
+                    raise ValueError(f"File exceeds the configured scan limit of {max_bytes} bytes.")
+                if is_cancelled is not None and is_cancelled():
+                    raise InterruptedError("Scan was cancelled.")
+                if time.monotonic() - started_at > timeout_seconds:
+                    raise TimeoutError("Scan timed out.")
                 digest.update(chunk)
                 entropy_counts.update(chunk)
                 if len(sample) < 10_000_000:
@@ -186,7 +223,18 @@ class StaticScanner:
             ],
         )
 
-    def scan_folder(self, path: Path) -> dict:
+    def scan_folder(
+        self,
+        path: Path,
+        *,
+        max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
+        max_folder_bytes: int = DEFAULT_MAX_FOLDER_BYTES,
+        max_files: int | None = None,
+        timeout_seconds: float = 180.0,
+        is_cancelled=None,
+    ) -> dict:
+        if max_files is None:
+            max_files = MAX_FOLDER_SCAN_FILES
         root = Path(path).resolve()
         system_roots = protected_system_roots()
         if is_protected_system_path(root, protected_roots=system_roots, resolve=False):
@@ -200,6 +248,8 @@ class StaticScanner:
         files_attempted = 0
         directories_visited = 0
         truncated = False
+        folder_bytes = 0
+        started_at = time.monotonic()
 
         def record_walk_error(error: OSError) -> None:
             failures.append({
@@ -210,6 +260,10 @@ class StaticScanner:
         for current, directories, filenames in os.walk(
             root, followlinks=False, onerror=record_walk_error
         ):
+            if is_cancelled is not None and is_cancelled():
+                return self._folder_result(results, failures + [{"name": str(root), "message": "Scan was cancelled."}], skipped, truncated=True)
+            if time.monotonic() - started_at > timeout_seconds:
+                return self._folder_result(results, failures + [{"name": str(root), "message": "Scan timed out."}], skipped, truncated=True)
             directories_visited += 1
             if directories_visited > MAX_FOLDER_SCAN_DIRECTORIES:
                 truncated = True
@@ -232,13 +286,49 @@ class StaticScanner:
                 ):
                     skipped += 1
                     continue
-                if files_attempted >= MAX_FOLDER_SCAN_FILES:
+                if files_attempted >= max_files:
                     truncated = True
                     directories[:] = []
                     break
                 files_attempted += 1
                 try:
-                    results.append(self.scan_file(candidate, protected_roots=system_roots))
+                    file_size = candidate.stat().st_size
+                except OSError as exc:
+                    failures.append({"name": str(candidate), "message": str(exc)})
+                    continue
+                if file_size > max_file_bytes:
+                    failures.append({
+                        "name": str(candidate),
+                        "message": f"File exceeds the configured {max_file_bytes}-byte limit.",
+                    })
+                    continue
+                if folder_bytes + file_size > max_folder_bytes:
+                    truncated = True
+                    directories[:] = []
+                    break
+                folder_bytes += file_size
+                try:
+                    results.append(self.scan_file(
+                        candidate,
+                        protected_roots=system_roots,
+                        max_bytes=max_file_bytes,
+                        timeout_seconds=timeout_seconds,
+                        is_cancelled=is_cancelled,
+                    ))
+                except InterruptedError as exc:
+                    return self._folder_result(
+                        results,
+                        failures + [{"name": str(candidate), "message": str(exc)}],
+                        skipped,
+                        truncated=True,
+                    )
+                except TimeoutError as exc:
+                    return self._folder_result(
+                        results,
+                        failures + [{"name": str(candidate), "message": str(exc)}],
+                        skipped,
+                        truncated=True,
+                    )
                 except (OSError, ValueError) as exc:
                     failures.append({"name": str(candidate), "message": str(exc)})
             if truncated:

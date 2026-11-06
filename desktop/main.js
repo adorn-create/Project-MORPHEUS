@@ -203,51 +203,6 @@ async function createWindow() {
   });
 }
 
-function startFirewallServiceWithElevation() {
-  if (process.platform !== 'win32') {
-    return Promise.reject(new Error('The firewall service can only be started on Windows.'));
-  }
-  const command = [
-    "$ErrorActionPreference = 'Stop'",
-    "$sc = Join-Path $env:WINDIR 'System32\\sc.exe'",
-    "$process = Start-Process -FilePath $sc -ArgumentList @('start', 'MorpheusFirewallWorker') -Verb RunAs -Wait -PassThru",
-    'exit $process.ExitCode',
-  ].join('; ');
-  const encoded = Buffer.from(command, 'utf16le').toString('base64');
-
-  return new Promise((resolve, reject) => {
-    const child = spawn('powershell.exe', [
-      '-NoProfile',
-      '-NonInteractive',
-      '-EncodedCommand',
-      encoded,
-    ], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error('Timed out waiting for Windows service approval or startup.'));
-    }, 120000);
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', chunk => { stdout += chunk; });
-    child.stderr.on('data', chunk => { stderr += chunk; });
-    child.once('error', error => {
-      clearTimeout(timer);
-      reject(new Error(`Could not request administrator approval: ${error.message}`));
-    });
-    child.once('close', code => {
-      clearTimeout(timer);
-      if (code === 0) {
-        resolve({ started: true });
-        return;
-      }
-      const detail = (stderr || stdout).trim();
-      reject(new Error(detail || `Windows could not start the firewall service (exit code ${code}).`));
-    });
-  });
-}
-
 async function notifyNewQuarantines() {
   try {
     const response = await fetch(`${backendUrl}/api/events?limit=200`);
@@ -304,7 +259,6 @@ app.whenReady().then(() => {
     const result = await dialog.showOpenDialog(window, { properties: ['openFile'] });
     return result.canceled ? null : result.filePaths[0] || null;
   });
-  ipcMain.handle('morpheus:start-firewall-service', startFirewallServiceWithElevation);
   ipcMain.handle('morpheus:toggle-fullscreen', () => {
     if (!window || window.isDestroyed()) throw new Error('The Morpheus window is unavailable.');
     window.setFullScreen(!window.isFullScreen());

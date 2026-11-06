@@ -10,6 +10,7 @@ import sys
 import tempfile
 import threading
 import time
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -37,13 +38,16 @@ from .engine import DefenseEngine
 from .downloads import MAX_MONITORED_FILES, DownloadMonitor
 from .code_review import CodeReview
 from .local_assistant import OfflineAssistant
-from .scanner import ProtectedSystemPathError, StaticScanner
+from .scanner import ProtectedSystemPathError, StaticScanner, is_protected_system_path
 from .sysmon import SysmonStatus
 from .timeline import AttackTimeline
 from .quarantine import QuarantineManager
 from .persistence import inspect_autostart_registry
-from .network_guard import WindowsFirewallLogMonitor
-from .defender_monitor import DefenderHealthMonitor
+from .defender_monitor import (
+    DefenderHealthMonitor,
+    scan_file_with_defender,
+    update_defender_signatures,
+)
 from .clamav import ClamAVScanner
 from .filesystem_monitor import SelectedFolderEventMonitor
 from .models import (
@@ -51,7 +55,6 @@ from .models import (
     AssistantChatRequest,
     AntivirusScanRequest,
     ConfigUpdate,
-    FirewallRuleRequest,
     QuarantineRequest,
     ScanFileRequest,
     ScanFolderRequest,
@@ -60,8 +63,6 @@ from .models import (
     PasskeyRegistrationOptionsRequest,
     SettingsPasswordRequest,
 )
-from .firewall import FirewallWorkerError
-from .firewall_worker import parse_public_ip, scan_block_rule_name
 from .tool_catalog import TOOL_CATALOG
 from .expansion import DnsEntropyMonitor, PowerShellLogMonitor
 from .canary import CanaryMonitor
@@ -100,19 +101,52 @@ download_monitor = DownloadMonitor(
 )
 sysmon = SysmonStatus()
 timeline = AttackTimeline(engine.db)
-quarantine = QuarantineManager(DATA_ROOT / "quarantine")
+quarantine = engine.quarantine
 dns_monitor = DnsEntropyMonitor()
 powershell_monitor = PowerShellLogMonitor()
 canary_monitor = CanaryMonitor(DATA_ROOT / "canaries")
-inbound_scan_monitor = WindowsFirewallLogMonitor()
 defender_health_monitor = DefenderHealthMonitor()
 filesystem_event_monitor = SelectedFolderEventMonitor()
 templates = Jinja2Templates(directory=str(ROOT / "morpheus" / "templates"))
 app = FastAPI(title="Morpheus Defense", version="0.2.0")
+_MORPHEUS_MUTATION_BUCKETS: dict[str, deque[float]] = {}
+_MORPHEUS_MUTATION_RATE = 120
+_MORPHEUS_MUTATION_WINDOW = 60.0
+
+@app.middleware("http")
+async def morpheus_loopback_guard(request: Request, call_next):
+    host = request.headers.get("host", "").split(":", 1)[0].strip("[]").lower()
+    if host not in {"localhost", "127.0.0.1", "::1", "testserver"}:
+        return JSONResponse(status_code=403, content={"detail": "Morpheus only accepts loopback requests."})
+
+    if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+        origin = request.headers.get("origin")
+        if origin:
+            origin_host = urlsplit(origin).hostname
+            if urlsplit(origin).scheme != "http" or origin_host not in {"localhost", "127.0.0.1", "::1"}:
+                return JSONResponse(status_code=403, content={"detail": "Cross-origin request blocked."})
+
+        client = request.client.host if request.client else "unknown"
+        now = time.monotonic()
+        bucket = _MORPHEUS_MUTATION_BUCKETS.setdefault(client, deque())
+        while bucket and now - bucket[0] >= _MORPHEUS_MUTATION_WINDOW:
+            bucket.popleft()
+        if len(bucket) >= _MORPHEUS_MUTATION_RATE:
+            return JSONResponse(status_code=429, content={"detail": "Too many Morpheus mutation requests."})
+        bucket.append(now)
+
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 worker_stop = threading.Event()
 worker_wakeup = threading.Event()
 worker_thread: threading.Thread | None = None
 scan_lock = threading.Lock()
+scan_cancel_event = threading.Event()
 last_scan_at: str | None = None
 last_scan_error: str | None = None
 LOGGER = logging.getLogger(__name__)
@@ -237,9 +271,10 @@ def status():
             "downloads_enabled": config.get("download_monitoring", False),
             "download_directory": config.get("download_directory") or str(Path.home() / "Downloads"),
             "monitored_file_limit": MAX_MONITORED_FILES,
-            "inbound_scan_protection": inbound_scan_monitor.status(
-                bool(config.get("automatic_inbound_scan_blocking", False))
-            ),
+            "scan_max_file_bytes": int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+            "scan_max_folder_bytes": int(config.get("scan_max_folder_bytes", 5 * 1024 * 1024 * 1024)),
+            "scan_max_folder_files": int(config.get("scan_max_folder_files", 5000)),
+            "scan_timeout_seconds": float(config.get("scan_timeout_seconds", 180)),
         },
         "expansion": {
             "dns": dns_monitor.status(bool(config.get("dns_entropy_monitoring", False))),
@@ -264,6 +299,15 @@ def scan():
     detected = evaluate_processes()
     return {"detected": detected, "processes_checked": engine.last_process_count}
 
+@app.post("/api/scan/cancel")
+def cancel_active_scan(
+    request: Request,
+    x_morpheus_authorization: str | None = Header(default=None),
+):
+    require_sensitive_authorization(x_morpheus_authorization, request)
+    scan_cancel_event.set()
+    return {"cancelled": True}
+
 @app.get("/api/timeline")
 def attack_timeline(limit: int = 200):
     return [timeline.reconstruct(event) for event in engine.db.list_events(limit)]
@@ -286,7 +330,14 @@ def scan_file(payload: ScanFileRequest):
     if not path:
         return JSONResponse({"error": "path is required"}, status_code=400)
     try:
-        return scanner.scan_file(Path(path))
+        scan_cancel_event.clear()
+        config = engine.config()
+        return scanner.scan_file(
+            Path(path),
+            max_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+            timeout_seconds=float(config.get("scan_timeout_seconds", 180)),
+            is_cancelled=scan_cancel_event.is_set,
+        )
     except ProtectedSystemPathError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
@@ -297,7 +348,12 @@ def scan_file(payload: ScanFileRequest):
 @app.post("/api/scan-antivirus")
 def scan_file_with_antivirus(payload: AntivirusScanRequest):
     try:
-        result = clamav_scanner.scan_file(Path(payload.path))
+        scan_cancel_event.clear()
+        config = engine.config()
+        result = clamav_scanner.scan_file(
+            Path(payload.path),
+            max_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+        )
     except ProtectedSystemPathError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except FileNotFoundError as exc:
@@ -337,10 +393,47 @@ def update_clamav_signatures(
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+@app.post("/api/antivirus/defender/scan")
+def scan_file_with_windows_defender(payload: AntivirusScanRequest):
+    try:
+        config = engine.config()
+        return scan_file_with_defender(
+            Path(payload.path),
+            max_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+        )
+    except ProtectedSystemPathError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+@app.post("/api/antivirus/defender/update")
+def update_windows_defender_signatures(
+    request: Request,
+    x_morpheus_authorization: str | None = Header(default=None),
+):
+    require_sensitive_authorization(x_morpheus_authorization, request)
+    try:
+        return update_defender_signatures()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
 @app.post("/api/scan-folder")
 def scan_folder(payload: ScanFolderRequest):
     try:
-        return scanner.scan_folder(Path(payload.path))
+        scan_cancel_event.clear()
+        config = engine.config()
+        return scanner.scan_folder(
+            Path(payload.path),
+            max_file_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+            max_folder_bytes=int(config.get("scan_max_folder_bytes", 5 * 1024 * 1024 * 1024)),
+            max_files=int(config.get("scan_max_folder_files", 5000)),
+            timeout_seconds=float(config.get("scan_timeout_seconds", 180)),
+            is_cancelled=scan_cancel_event.is_set,
+        )
     except ProtectedSystemPathError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
@@ -374,7 +467,15 @@ def assistant_chat(payload: AssistantChatRequest):
 def scan_upload(file: UploadFile = File(...)):
     name = file.filename or "selected file"
     try:
-        return scanner.scan_stream(file.file, name)
+        scan_cancel_event.clear()
+        config = engine.config()
+        return scanner.scan_stream(
+            file.file,
+            name,
+            max_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+            timeout_seconds=float(config.get("scan_timeout_seconds", 180)),
+            is_cancelled=scan_cancel_event.is_set,
+        )
     except ProtectedSystemPathError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
@@ -385,9 +486,42 @@ def sysmon_status():
 @app.get("/api/quarantine")
 def list_quarantine():
     items = []
-    for path in quarantine.root.glob("*.quarantine"):
-        items.append({"name": path.name, "size": path.stat().st_size, "modified": path.stat().st_mtime})
+    for path in list(quarantine.root.rglob("*.quarantine")) + list(quarantine.root.rglob("*.folder")):
+        category = path.parent.name if path.parent.name in {"files", "apps", "folders"} else "files"
+        metadata_path = path.with_suffix(".json")
+        original = ""
+        if metadata_path.exists():
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                original = metadata.get("original", "")
+            except (OSError, json.JSONDecodeError):
+                pass
+        items.append({
+            "name": path.name,
+            "size": path.stat().st_size if path.is_file() else sum(p.stat().st_size for p in path.rglob("*") if p.is_file()),
+            "modified": path.stat().st_mtime,
+            "category": category,
+            "token": path.stem,
+            "original": original,
+            "kind": "folder" if path.suffix == ".folder" else "file",
+        })
     return items
+
+@app.get("/api/quarantine/status")
+def quarantine_status():
+    category_counts = {}
+    for category in ("files", "apps", "folders"):
+        suffixes = ("*.quarantine", "*.folder") if category == "folders" else ("*.quarantine",)
+        category_counts[category] = sum(
+            len(list((quarantine.root / category).rglob(suffix)))
+            for suffix in suffixes
+        )
+    return {
+        "folder": str(quarantine.root),
+        "categories": ["files", "apps", "folders"],
+        "item_count": len(list(quarantine.root.rglob("*.quarantine"))) + len(list(quarantine.root.rglob("*.folder"))),
+        "category_counts": category_counts,
+    }
 
 @app.post("/api/quarantine")
 def quarantine_file(
@@ -400,103 +534,18 @@ def quarantine_file(
     if not path:
         return JSONResponse({"error": "path is required"}, status_code=400)
     try:
-        return quarantine.quarantine(Path(path))
-    except (FileNotFoundError, OSError, PermissionError) as exc:
+        resolved = Path(path)
+        resolved = resolved.resolve()
+        if resolved == Path(resolved.anchor) or is_protected_system_path(resolved, resolve=False):
+            return JSONResponse({"error": "Drive roots and protected Windows folders cannot be isolated."}, status_code=403)
+        if quarantine.root in resolved.parents or resolved == quarantine.root:
+            return JSONResponse({"error": "Morpheus isolated storage cannot be isolated."}, status_code=403)
+        if resolved.is_dir():
+            return quarantine.quarantine_folder(resolved)
+        category = "apps" if resolved.suffix.casefold() in {".exe", ".dll", ".sys", ".com"} else "files"
+        return quarantine.quarantine(resolved, category=category)
+    except (FileNotFoundError, OSError, PermissionError, ValueError) as exc:
         return JSONResponse({"error": str(exc)}, status_code=404)
-
-@app.get("/api/firewall")
-def firewall_rules():
-    try:
-        return engine.firewall.list_morpheus_rules()
-    except FirewallWorkerError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-@app.get("/api/firewall/worker")
-def firewall_worker_status():
-    return engine.firewall.worker_status()
-
-@app.post("/api/firewall")
-def add_firewall_rule(
-    payload: FirewallRuleRequest,
-    request: Request,
-    x_morpheus_authorization: str | None = Header(default=None),
-):
-    require_sensitive_authorization(x_morpheus_authorization, request)
-    address = parse_public_ip(payload.remote_ip)
-    if address is None:
-        raise HTTPException(status_code=422, detail="Only globally routable IPv4 or IPv6 addresses can be blocked.")
-    try:
-        added = engine.firewall.block_remote(str(address))
-    except FirewallWorkerError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    if not added:
-        raise HTTPException(status_code=503, detail="The firewall worker could not add the requested rule.")
-    return {"added": True}
-
-@app.post("/api/firewall/allow")
-def allow_inbound_scan_source(
-    payload: FirewallRuleRequest,
-    request: Request,
-    x_morpheus_authorization: str | None = Header(default=None),
-):
-    require_sensitive_authorization(x_morpheus_authorization, request)
-    address = parse_public_ip(payload.remote_ip)
-    if address is None:
-        raise HTTPException(
-            status_code=422,
-            detail="Only globally routable IPv4 or IPv6 addresses can be allowlisted.",
-        )
-    normalized = str(address)
-    with CONFIG_WRITE_LOCK:
-        config = engine.config()
-        allowlist = {
-            str(parsed)
-            for value in config.get("inbound_scan_allowlist", [])
-            if (parsed := parse_public_ip(value)) is not None
-        }
-        if normalized not in allowlist:
-            rule_name = scan_block_rule_name(normalized)
-            try:
-                rules = engine.firewall.list_morpheus_rules()
-                if any(rule.get("name") == rule_name for rule in rules):
-                    if not engine.firewall.remove_rule_by_name(rule_name):
-                        raise HTTPException(
-                            status_code=503,
-                            detail="Could not remove the inbound block; the IP was not allowlisted.",
-                        )
-            except FirewallWorkerError as exc:
-                raise HTTPException(status_code=503, detail=str(exc)) from exc
-            allowlist.add(normalized)
-            config["inbound_scan_allowlist"] = sorted(allowlist)
-            _write_config_file(config)
-            event = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "kind": "inbound_scan_allowlisted",
-                "severity": "low",
-                "source": "Owner",
-                "target": normalized,
-                "confidence": None,
-                "evidence": "The owner chose to allow this public source IP.",
-                "response": "owner_allowlisted_no_block",
-            }
-            engine.db.add(event)
-            engine.journal.append(event)
-    return {"allowed": True, "remote_ip": normalized}
-
-@app.delete("/api/firewall/{name}")
-def remove_firewall_rule(
-    name: str,
-    request: Request,
-    x_morpheus_authorization: str | None = Header(default=None),
-):
-    require_sensitive_authorization(x_morpheus_authorization, request)
-    try:
-        removed = engine.firewall.remove_rule_by_name(name)
-    except FirewallWorkerError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    if not removed:
-        raise HTTPException(status_code=404, detail="The Morpheus firewall rule was not found or could not be removed.")
-    return {"removed": True}
 
 @app.post("/api/quarantine/{token}/restore")
 def restore_quarantine(
@@ -810,13 +859,6 @@ def worker():
             if filesystem_scan_due and not periodic_download_scan_due:
                 download_monitor.scan_new_downloads(config)
 
-            if process_scan_due:
-                inbound_scan_monitor.poll(
-                    config,
-                    engine.firewall,
-                    engine.db,
-                    engine.journal,
-                )
             defender_health_monitor.poll(engine.db, engine.journal)
         except Exception:
             LOGGER.exception("Background security monitoring failed")

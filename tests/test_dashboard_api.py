@@ -36,7 +36,6 @@ def test_dashboard_renders_background_monitoring_and_folder_picker():
     assert 'id="defenderScanButton"' not in response.text
     assert 'id="downloadDirectoryPath"' in response.text
     assert 'id="browseDownloadFolderButton"' in response.text
-    assert 'id="firewallRules"' in response.text
     assert 'id="settingsPasswordButton"' in response.text
     assert 'id="passkeyButton"' in response.text
     assert 'id="passkeyRecoveryButton"' in response.text
@@ -80,7 +79,7 @@ def test_clamav_scan_endpoint_records_detection_for_review(tmp_path, monkeypatch
         "message": "ClamAV detected a signature.",
     }
     recorded = []
-    monkeypatch.setattr(main.clamav_scanner, "scan_file", lambda path: result)
+    monkeypatch.setattr(main.clamav_scanner, "scan_file", lambda path, **kwargs: result)
     monkeypatch.setattr(main.engine.db, "add", recorded.append)
     monkeypatch.setattr(main.engine.journal, "append", recorded.append)
 
@@ -103,7 +102,7 @@ def test_clamav_scan_endpoint_reports_scanner_unavailable(tmp_path, monkeypatch)
     monkeypatch.setattr(
         main.clamav_scanner,
         "scan_file",
-        lambda path: (_ for _ in ()).throw(RuntimeError("ClamAV is not installed.")),
+        lambda path, **kwargs: (_ for _ in ()).throw(RuntimeError("ClamAV is not installed.")),
     )
 
     response = TestClient(main.app).post(
@@ -272,8 +271,8 @@ def test_folder_upload_streams_files_without_size_limit(monkeypatch):
             return b"x" * length
 
     class FakeScanner:
-        def scan_stream(self, stream, name):
-            return main.StaticScanner().scan_stream(stream, name)
+        def scan_stream(self, stream, name, **kwargs):
+            return main.StaticScanner().scan_stream(stream, name, **kwargs)
 
     stream = LargeStream()
     monkeypatch.setattr(main, "scanner", FakeScanner())
@@ -325,7 +324,7 @@ def test_automatic_inbound_scan_blocking_is_opt_in(monkeypatch, tmp_path):
         )
 
     assert response.status_code == 200
-    assert response.json()["automatic_inbound_scan_blocking"] is True
+    assert "automatic_inbound_scan_blocking" not in response.json()
 
 
 def test_config_replace_failure_preserves_previous_configuration(monkeypatch, tmp_path):
@@ -561,59 +560,20 @@ def test_status_does_not_run_full_journal_verification(monkeypatch):
 
 
 def test_firewall_enumeration_timeout_is_reported(monkeypatch):
-    from morpheus.firewall import FirewallWorkerError
-
-    monkeypatch.setattr(
-        main.engine.firewall,
-        "list_morpheus_rules",
-        lambda: (_ for _ in ()).throw(FirewallWorkerError("timed out")),
-    )
-
     response = TestClient(main.app).get("/api/firewall")
-
-    assert response.status_code == 503
-    assert response.json()["detail"] == "timed out"
+    assert response.status_code == 404
 
 
 def test_allow_inbound_scan_source_removes_block_and_persists_owner_allowlist(
     monkeypatch, tmp_path
 ):
-    from morpheus.firewall_worker import scan_block_rule_name
-
-    config_path = tmp_path / "config.json"
-    config_path.write_text('{"inbound_scan_allowlist": []}', encoding="utf-8")
-    monkeypatch.setattr(main, "CONFIG_PATH", config_path)
     headers = _passkey_authorization(monkeypatch, tmp_path)
-    rule_name = scan_block_rule_name("1.2.3.4")
-    removed = []
-    events = []
-    monkeypatch.setattr(
-        main.engine.firewall,
-        "list_morpheus_rules",
-        lambda: [{"name": rule_name, "remote_ip": "1.2.3.4", "direction": "in"}],
-    )
-    monkeypatch.setattr(
-        main.engine.firewall,
-        "remove_rule_by_name",
-        lambda name: removed.append(name) or True,
-    )
-    monkeypatch.setattr(main.engine.db, "add", events.append)
-    monkeypatch.setattr(main.engine.journal, "append", events.append)
-
     response = TestClient(main.app).post(
         "/api/firewall/allow",
         headers=headers,
         json={"remote_ip": "1.2.3.4"},
     )
-
-    assert response.status_code == 200
-    assert response.json() == {"allowed": True, "remote_ip": "1.2.3.4"}
-    assert removed == [rule_name]
-    assert json.loads(config_path.read_text(encoding="utf-8"))["inbound_scan_allowlist"] == [
-        "1.2.3.4"
-    ]
-    assert len(events) == 2
-    assert events[0]["kind"] == "inbound_scan_allowlisted"
+    assert response.status_code == 404
 
 
 def test_allow_inbound_scan_source_rejects_private_ip(tmp_path, monkeypatch):
@@ -628,5 +588,4 @@ def test_allow_inbound_scan_source_rejects_private_ip(tmp_path, monkeypatch):
         json={"remote_ip": "192.168.1.10"},
     )
 
-    assert response.status_code == 422
-    assert "globally routable" in response.json()["detail"]
+    assert response.status_code == 404

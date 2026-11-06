@@ -202,7 +202,17 @@ class FirewallController:
             win32pipe.SetNamedPipeHandleState(
                 pipe, win32pipe.PIPE_READMODE_MESSAGE, None, None
             )
-            win32file.WriteFile(pipe, json.dumps(request).encode("utf-8"))
+            challenge_request = json.dumps({"operation": "challenge"}).encode("utf-8")
+            win32file.WriteFile(pipe, challenge_request)
+            error, raw = win32file.ReadFile(pipe, 4096)
+            if error or len(raw) >= 4096:
+                raise FirewallWorkerError("The firewall worker returned an invalid response.")
+            challenge_response = json.loads(raw.decode("utf-8"))
+            challenge = challenge_response.get("challenge") if challenge_response.get("ok") else None
+            if not isinstance(challenge, str) or not challenge or len(challenge) > 512:
+                raise FirewallWorkerError("The firewall worker did not issue a valid challenge.")
+            authorized_request = {**request, "_challenge": challenge}
+            win32file.WriteFile(pipe, json.dumps(authorized_request).encode("utf-8"))
             error, raw = win32file.ReadFile(pipe, 4096)
             if error or len(raw) >= 4096:
                 raise FirewallWorkerError("The firewall worker returned an invalid response.")

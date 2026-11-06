@@ -42,7 +42,19 @@ jobs:
           npm.cmd run test:ui
       - name: Build Windows installer
         shell: pwsh
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CODE_SIGNING_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_PASSWORD }}
         run: npm.cmd run build:win
+      - name: Create release checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path dist -Filter "*.exe" |
+            ForEach-Object {
+              $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName
+              "$($hash.Hash.ToLower())  $($_.Name)" |
+                Add-Content -Encoding ascii -Path dist/SHA256SUMS.txt
+            }
       - name: Publish GitHub release
         shell: pwsh
         env:
@@ -58,7 +70,8 @@ jobs:
           if (-not $installer) {
             throw 'The Windows installer was not produced.'
           }
-          gh release create $env:GITHUB_REF_NAME "$($installer.FullName)" `
+          $checksums = Join-Path $PWD "dist/SHA256SUMS.txt"
+          gh release create $env:GITHUB_REF_NAME "$($installer.FullName)" "$checksums" `
             --title "Morpheus Defense $env:GITHUB_REF_NAME" `
             --generate-notes `
             --verify-tag

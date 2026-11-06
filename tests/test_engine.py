@@ -44,23 +44,48 @@ def test_automatic_quarantine_is_reversible_and_does_not_block_network(tmp_path,
             executable,
         ),
     )
-    monkeypatch.setattr(
-        engine.firewall,
-        "block_remote",
-        lambda remote_ip: (_ for _ in ()).throw(AssertionError("quarantine-only mode must not block IPs")),
-    )
-
     detections = engine.evaluate_once()
 
     assert len(detections) == 1
     assert "quarantined:" in detections[0]["response"]
     assert "blocked_remote:" not in detections[0]["response"]
     assert not executable.exists()
-    quarantine_path = next((tmp_path / "data" / "quarantine").glob("*.quarantine"))
+    quarantine_path = next((tmp_path / "data" / "Isolated" / "apps").glob("*.quarantine"))
     metadata = json.loads(quarantine_path.with_suffix(".json").read_text(encoding="utf-8"))
     restored = engine.quarantine.restore(metadata["token"])
     assert restored["restored"] == str(executable)
     assert executable.is_file()
+
+
+def test_process_isolation_only_terminates_matching_executable(tmp_path):
+    executable = tmp_path / "payload.exe"
+    executable.write_bytes(b"MZ")
+
+    class ProcessStub:
+        def __init__(self):
+            self.terminated = False
+            self.killed = False
+
+        def exe(self):
+            return str(executable)
+
+        def is_running(self):
+            return True
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout):
+            return 0
+
+        def kill(self):
+            self.killed = True
+
+    process = ProcessStub()
+
+    assert DefenseEngine.isolate_process(process, executable) == "isolated_process_terminated"
+    assert process.terminated is True
+    assert process.killed is False
 
 
 def test_known_tool_is_reported_once_while_running_without_auto_action(tmp_path, monkeypatch):
@@ -84,7 +109,6 @@ def test_known_tool_is_reported_once_while_running_without_auto_action(tmp_path,
     monkeypatch.setattr(engine_module.psutil, "Process", lambda pid: object())
     monkeypatch.setattr(engine_module, "snapshot_processes", lambda excluded: process_snapshot)
     monkeypatch.setattr(engine_module, "executable_signals", lambda proc, connections: ({}, executable))
-    monkeypatch.setattr(engine.firewall, "block_remote", lambda remote_ip: True)
     monkeypatch.setattr(engine.quarantine, "quarantine", lambda path: (_ for _ in ()).throw(
         AssertionError("a tool-name match must not trigger automatic quarantine")
     ))

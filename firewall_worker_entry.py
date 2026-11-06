@@ -1,4 +1,5 @@
 import json
+import secrets
 import sys
 import winreg
 
@@ -30,6 +31,7 @@ class MorpheusFirewallWorker(win32serviceutil.ServiceFramework):
     def __init__(self, args):
         super().__init__(args)
         self.stop_event = win32event.CreateEvent(None, 0, 0, None)
+        self._challenge = secrets.token_urlsafe(32)
 
     def SvcStop(self):
         self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
@@ -98,8 +100,7 @@ class MorpheusFirewallWorker(win32serviceutil.ServiceFramework):
             attributes,
         )
 
-    @staticmethod
-    def _serve_request(pipe, firewall):
+    def _serve_request(self, pipe, firewall):
         win32pipe.SetNamedPipeHandleState(
             pipe, win32pipe.PIPE_READMODE_MESSAGE | win32pipe.PIPE_WAIT, None, None
         )
@@ -109,11 +110,37 @@ class MorpheusFirewallWorker(win32serviceutil.ServiceFramework):
         else:
             try:
                 request = json.loads(raw.decode("utf-8"))
-                response = handle_worker_request(request, firewall)
+                operation = request.get("operation") if isinstance(request, dict) else None
+                if operation == "challenge":
+                    response = {"ok": True, "challenge": self._challenge}
+                elif operation in {"add", "add_inbound", "remove"}:
+                    if request.get("_challenge") != self._challenge:
+                        response = {"ok": False, "error": "A valid firewall worker challenge is required."}
+                    else:
+                        self._challenge = secrets.token_urlsafe(32)
+                        response = handle_worker_request(request, firewall)
+                else:
+                    response = {"ok": False, "error": "Unsupported firewall worker operation."}
             except (UnicodeDecodeError, json.JSONDecodeError):
                 response = {"ok": False, "error": "Request is not valid JSON."}
         win32file.WriteFile(pipe, json.dumps(response).encode("utf-8"))
         win32file.FlushFileBuffers(pipe)
+        if response.get("challenge"):
+            error, raw = win32file.ReadFile(pipe, 4096)
+            if error or len(raw) >= 4096:
+                return
+            try:
+                request = json.loads(raw.decode("utf-8"))
+                operation = request.get("operation") if isinstance(request, dict) else None
+                if operation in {"add", "add_inbound", "remove"} and request.get("_challenge") == self._challenge:
+                    self._challenge = secrets.token_urlsafe(32)
+                    response = handle_worker_request(request, firewall)
+                else:
+                    response = {"ok": False, "error": "A valid firewall worker challenge is required."}
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                response = {"ok": False, "error": "Request is not valid JSON."}
+            win32file.WriteFile(pipe, json.dumps(response).encode("utf-8"))
+            win32file.FlushFileBuffers(pipe)
 
 
 if __name__ == "__main__":
