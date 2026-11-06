@@ -139,6 +139,13 @@ class QuarantineManager:
                 raise FileExistsError(destination)
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(source), str(destination))
+            if os.name == "nt":
+                subprocess.run(
+                    ["icacls", str(destination), "/reset"],
+                    check=False,
+                    capture_output=True,
+                    timeout=10,
+                )
             source_manifest = self._folder_manifest(destination)
             if source_manifest != metadata["sha256"]:
                 raise OSError("Isolated folder failed integrity check")
@@ -146,6 +153,13 @@ class QuarantineManager:
             return {"restored": str(destination), "kind": "folder"}
         if not source.is_file(): raise FileNotFoundError(source)
         destination.parent.mkdir(parents=True, exist_ok=True)
+        if os.name == "nt":
+            subprocess.run(
+                ["icacls", str(source), "/reset"],
+                check=False,
+                capture_output=True,
+                timeout=10,
+            )
         shutil.copy2(source, destination)
         if self._sha256(destination) != metadata["sha256"]: raise OSError("Quarantined file failed integrity check")
         source.unlink()

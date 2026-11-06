@@ -960,10 +960,10 @@ def worker():
 @app.on_event("startup")
 def start_worker():
     global worker_thread
-    if worker_thread and worker_thread.is_alive():
-        return
     worker_stop.clear()
     worker_wakeup.clear()
+    if worker_thread and worker_thread.is_alive():
+        return
     worker_thread = threading.Thread(target=worker, name="morpheus-collector", daemon=True)
     worker_thread.start()
 
