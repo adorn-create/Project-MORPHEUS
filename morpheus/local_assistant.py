@@ -3,6 +3,23 @@ import re
 
 _INTENTS = (
     (
+        ("firewall", "internet address", "block address", "outbound block"),
+        "Morpheus's firewall controls can add a manual outbound block for an IP "
+        "address you choose, and optional inbound scan protection can add blocks "
+        "for public addresses that show repeated probing behavior. Morpheus does "
+        "not control another computer, freeze a remote device, or prove who owns "
+        "an address. A wrong rule can disrupt websites or apps.",
+    ),
+    (
+        ("inbound scan", "dropped packet", "dropped-packet", "10 or more distinct", "allow this ip"),
+        "Inbound scan protection uses Windows Firewall dropped-packet logging. "
+        "Morpheus reviews logged drops and can alert when 10 or more distinct local "
+        "ports receive probes within 60 seconds, then requires passkey approval for "
+        "an outbound-scoped review workflow. The heuristic does not prove an attack. "
+        "Use Allow this IP in the alert to remove a block and prevent a future "
+        "automatic block for that address.",
+    ),
+    (
         (
             "malware get into", "malware get in", "malware can get in",
             "malware enter", "how malware", "malware infection",

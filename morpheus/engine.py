@@ -18,7 +18,7 @@ class DefenseEngine:
         self.config_path = config_path
         self.db = Database(root / "morpheus.db")
         self.model = OwnBehaviorModel()
-        self.quarantine = QuarantineManager(root / "quarantine")
+        self.quarantine = QuarantineManager(root / "Isolated")
         self.firewall = FirewallController()
         self.journal = EvidenceJournal(root)
         self.rules = RuleEngine()
@@ -32,6 +32,27 @@ class DefenseEngine:
             "total_processes": 0,
         }
         self.last_process_count = 0
+
+    @staticmethod
+    def isolate_process(process, executable: Path) -> str:
+        """Terminate a process only when its executable still matches the target."""
+        try:
+            process_executable = Path(process.exe()).resolve()
+            target_executable = Path(executable).resolve()
+        except (OSError, psutil.Error, TypeError, ValueError):
+            return "isolated_process_match_failed"
+
+        if process_executable != target_executable:
+            return "isolated_process_not_matching"
+        if not process.is_running():
+            return "isolated_process_not_running"
+
+        process.terminate()
+        try:
+            process.wait(timeout=3)
+        except (psutil.Error, psutil.TimeoutExpired, AttributeError):
+            process.kill()
+        return "isolated_process_terminated"
 
     def config(self):
         return json.loads(self.config_path.read_text(encoding="utf-8"))

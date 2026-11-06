@@ -888,7 +888,6 @@ async function refreshDashboard(includeFirewall = false) {
     ? `${passkeyStatus.credential_count} passkey(s) enrolled. Sensitive changes require fresh user verification. ${passkeyStatus.recovery_codes_remaining} recovery code(s) remain.`
     : 'No passkey enrolled. Sensitive changes are disabled until you register a passkey.';
   setFirewallWorkerState(workerStatus);
-  if (includeFirewall || !firewallRulesLoaded) loadFirewallRules();
   document.getElementById('eventCount').textContent = String(status.event_count);
   const defender = status.defender || {};
   const defenderState = document.getElementById('defenderHealthState');
