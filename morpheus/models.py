@@ -45,6 +45,13 @@ class SettingsPasswordRequest(BaseModel):
     password: str = Field(min_length=10, max_length=1024)
     current_password: str | None = Field(default=None, max_length=1024)
 
+class OwnerEmailRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    current_password: str | None = Field(default=None, max_length=1024)
+
+class OwnerEmailOtpRequest(BaseModel):
+    otp: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
 class PasskeyRegistrationOptionsRequest(BaseModel):
     bootstrap_password: str | None = Field(default=None, max_length=1024)
 

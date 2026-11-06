@@ -96,6 +96,7 @@ const elements = new Map(ids.map(id => [id, new Element(id)]));
 const calls = [];
 let passwordConfigured = false;
 let passkeyConfigured = false;
+let ownerEmailConfigured = false;
 let clamavAvailable = false;
 let freshclamAvailable = false;
 let clamavEngineVersion = null;
@@ -244,6 +245,27 @@ async function fetch(url, options = {}) {
       credential_count: passkeyConfigured ? 1 : 0,
       recovery_codes_remaining: 10,
     });
+  }
+  if (url === '/api/owner-email/status') {
+    return response({
+      configured: ownerEmailConfigured,
+      email_masked: ownerEmailConfigured ? 'ow****@example.com' : null,
+      smtp: { configured: true },
+    });
+  }
+  if (url === '/api/owner-email' && method === 'POST') {
+    ownerEmailConfigured = true;
+    return response({
+      configured: true,
+      email_masked: 'ow****@example.com',
+      smtp: { configured: true },
+    });
+  }
+  if (url === '/api/owner-email/otp/send' && method === 'POST') {
+    return response({ configured: true, email_masked: 'ow****@example.com', expires_in_seconds: 300 });
+  }
+  if (url === '/api/owner-email/otp/verify' && method === 'POST') {
+    return response({ authorization: 'single-use-email-test-grant', expires_in_seconds: 60 });
   }
   if (url === '/api/passkeys/authentication/options' && method === 'POST') {
     return response({

@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from morpheus import main
 from morpheus.passkeys import PasskeyManager
+from morpheus.email_otp import EmailOtpManager
 
 
 ORIGIN = "http://localhost:8080"
@@ -212,3 +213,23 @@ def test_passkey_approval_authorizes_one_sensitive_action_only(
     assert change.status_code == 200
     assert change.json()["automatic_quarantine"] is True
     assert replay.status_code == 401
+
+
+def test_email_otp_is_expiring_single_use_and_client_bound(tmp_path):
+    grant_manager = PasskeyManager(tmp_path / "grants.json", main._write_json_file)
+    manager = EmailOtpManager(
+        main._write_json_file,
+        tmp_path / "owner-email.json",
+        grant_manager,
+    )
+    manager.set_profile("Owner@Example.com")
+
+    otp, email = manager.request_otp("owner-client")
+    assert email == "owner@example.com"
+    assert manager.verify_otp(otp, "other-client") is None
+
+    grant = manager.request_otp("owner-client")
+    otp, _ = grant
+    token = manager.verify_otp(otp, "owner-client")
+    assert token
+    assert manager.verify_otp(otp, "owner-client") is None

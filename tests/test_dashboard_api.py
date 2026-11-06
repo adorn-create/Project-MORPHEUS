@@ -37,9 +37,9 @@ def test_dashboard_renders_background_monitoring_and_folder_picker():
     assert 'id="downloadDirectoryPath"' in response.text
     assert 'id="browseDownloadFolderButton"' in response.text
     assert 'id="settingsPasswordButton"' in response.text
-    assert 'id="passkeyButton"' in response.text
-    assert 'id="passkeyRecoveryButton"' in response.text
-    assert 'id="recoveryCodes"' in response.text
+    assert 'id="saveOwnerEmailButton"' in response.text
+    assert 'id="sendOwnerOtpButton"' in response.text
+    assert 'id="verifyOwnerOtpButton"' in response.text
     assert 'id="dnsEntropyMonitoring"' in response.text
     assert 'id="powershellLogMonitoring"' in response.text
     assert 'id="canaryMonitoring"' in response.text

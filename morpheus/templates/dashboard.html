@@ -400,20 +400,23 @@
         <div class="firewall-rules" id="firewallRules"></div>
       </div>
       <div class="panel" aria-labelledby="ownerSecurityTitle">
-        <div class="section-heading"><h2 id="ownerSecurityTitle">Passkey protection for sensitive changes</h2></div>
-        <p class="subtle">Sensitive settings and firewall actions require a passkey with device user verification (such as Windows Hello PIN/biometric or a security key). Owner passwords are only used to bootstrap first enrollment or manage the legacy password. Passkeys stay on your authenticator; Morpheus stores only public keys. Save the single-use recovery codes somewhere offline.</p>
+        <div class="section-heading"><h2 id="ownerSecurityTitle">Email approval for sensitive changes</h2></div>
+        <p class="subtle">A one-time recovery code is sent to the owner's email before sensitive settings or firewall actions are allowed. The email is stored only for this approval workflow; SMTP credentials stay outside the application data.</p>
         <div class="field-row">
           <input id="ownerPasswordInput" type="password" autocomplete="current-password" aria-label="Owner bootstrap password" placeholder="Current owner password, if configured">
         </div>
         <div class="field-row">
-          <button class="primary" id="passkeyButton" type="button">Register passkey</button>
-          <button id="passkeyRecoveryButton" type="button">Use a recovery code</button>
+          <input id="ownerEmailInput" type="email" autocomplete="email" maxlength="320" aria-label="Owner recovery email" placeholder="owner@example.com">
+          <button class="primary" id="saveOwnerEmailButton" type="button">Save owner email</button>
+          <button id="sendOwnerOtpButton" type="button">Send recovery OTP</button>
           <button id="settingsPasswordButton" type="button">Set Morpheus password</button>
         </div>
-        <p class="password-state" id="passkeyState" role="status">Passkey status: checking...</p>
+        <div class="field-row">
+          <input id="ownerOtpInput" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" aria-label="Recovery email OTP" placeholder="6-digit email OTP">
+          <button id="verifyOwnerOtpButton" type="button">Verify recovery OTP</button>
+        </div>
+        <p class="password-state" id="ownerEmailState" role="status">Owner email status: checking...</p>
         <p class="password-state" id="settingsPasswordState" role="status">No owner password configured.</p>
-        <pre class="password-state" id="recoveryCodes" hidden></pre>
-        <button id="hideRecoveryCodesButton" type="button" hidden>Hide recovery codes</button>
         <form class="password-form" id="settingsPasswordForm" hidden>
           <label for="newOwnerPassword">New password (at least 10 characters)</label>
           <input id="newOwnerPassword" type="password" autocomplete="new-password" minlength="10" maxlength="1024" required>
@@ -461,6 +464,7 @@ const assistantQuestion = document.getElementById('assistantQuestion');
 const sendAssistantQuestion = document.getElementById('sendAssistantQuestion');
 let settingsPasswordConfigured = false;
 let passkeyConfigured = false;
+let ownerEmailConfigured = false;
 let pendingRecoveryAuthorization = '';
 let firewallRulesLoaded = false;
 let firewallRulesLoading = false;
@@ -937,12 +941,13 @@ async function sendAssistantChat(event) {
 }
 
 async function refreshDashboard(includeFirewall = false) {
-  const [events, timeline, sysmon, status, passwordStatus, passkeyStatus, workerStatus, processTree, risk] = await Promise.all([
+  const [events, timeline, sysmon, status, passwordStatus, ownerEmailStatus, passkeyStatus, workerStatus, processTree, risk] = await Promise.all([
     requestJson('/api/events'),
     requestJson('/api/timeline'),
     requestJson('/api/sysmon'),
     requestJson('/api/status'),
     requestJson('/api/settings-password/status'),
+    requestJson('/api/owner-email/status'),
     requestJson('/api/passkeys/status'),
     requestJson('/api/firewall/worker'),
     requestJson('/api/process-tree'),
@@ -964,9 +969,10 @@ async function refreshDashboard(includeFirewall = false) {
   renderProtectionSummary(status.protection, status.quarantine, risk);
   settingsPasswordConfigured = Boolean(passwordStatus.configured);
   passkeyConfigured = Boolean(passkeyStatus.configured);
+  ownerEmailConfigured = Boolean(ownerEmailStatus.configured);
   document.getElementById('settingsPasswordState').textContent = settingsPasswordConfigured
-    ? 'An owner password is configured for first-passkey enrollment and password management.'
-    : 'No owner password configured. A passkey can be enrolled directly on this local device.';
+    ? 'An owner password is configured for password and recovery-email management.'
+    : 'No owner password configured. Set one before enabling recovery email.';
   document.getElementById('settingsPasswordButton').textContent = settingsPasswordConfigured
     ? 'Change owner password'
     : 'Set owner password';
@@ -974,12 +980,10 @@ async function refreshDashboard(includeFirewall = false) {
   document.getElementById('ownerPasswordInput').placeholder = settingsPasswordConfigured
     ? 'Current owner password for enrollment/password changes'
     : 'No bootstrap password is configured';
-  document.getElementById('passkeyButton').textContent = passkeyConfigured
-    ? 'Add another passkey'
-    : 'Register passkey';
-  document.getElementById('passkeyState').textContent = passkeyConfigured
-    ? `${passkeyStatus.credential_count} passkey(s) enrolled. Sensitive changes require fresh user verification. ${passkeyStatus.recovery_codes_remaining} recovery code(s) remain.`
-    : 'No passkey enrolled. Sensitive changes are disabled until you register a passkey.';
+  document.getElementById('ownerEmailInput').value = ownerEmailStatus.email_masked || '';
+  document.getElementById('ownerEmailState').textContent = ownerEmailConfigured
+    ? `Owner recovery email: ${ownerEmailStatus.email_masked}. SMTP delivery: ${ownerEmailStatus.smtp?.configured ? 'configured' : 'not configured'}.`
+    : 'No owner recovery email configured.';
   setFirewallWorkerState(workerStatus);
   document.getElementById('eventCount').textContent = String(status.event_count);
   const defender = status.defender || {};
@@ -1037,7 +1041,7 @@ async function refreshDashboard(includeFirewall = false) {
   document.getElementById('downloadMonitorState').textContent = status.monitoring.downloads_enabled ? 'Folder file checks: On' : 'Folder file checks: Off';
   document.getElementById('inboundScanStatus').textContent =
     status.monitoring.inbound_scan_protection?.message || 'Inbound scan protection status unavailable.';
-  if (!status.config.automatic_inbound_scan_blocking && !passkeyConfigured) {
+  if (!status.config.automatic_inbound_scan_blocking && !ownerEmailConfigured && !passkeyConfigured) {
     document.getElementById('inboundScanStatus').textContent =
       'Off. Enroll a passkey in the owner controls before enabling automatic firewall blocking.';
   }
@@ -1524,12 +1528,23 @@ function serializeWebAuthnCredential(credential) {
 }
 
 async function requestSensitiveAuthorization() {
-  if (!passkeyConfigured) throw new Error('Register a passkey before making sensitive changes.');
   if (pendingRecoveryAuthorization) {
     const token = pendingRecoveryAuthorization;
     pendingRecoveryAuthorization = '';
     return token;
   }
+  if (ownerEmailConfigured) {
+    await requestJson('/api/owner-email/otp/send', { method: 'POST' });
+    const otp = window.prompt('Enter the 6-digit recovery OTP sent to the owner email.');
+    if (!otp) throw new Error('Recovery email approval was cancelled.');
+    const result = await requestJson('/api/owner-email/otp/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ otp: otp.trim() }),
+    });
+    return result.authorization;
+  }
+  if (!passkeyConfigured) throw new Error('Configure the owner recovery email before making sensitive changes.');
   if (!navigator.credentials || typeof navigator.credentials.get !== 'function') {
     throw new Error('This browser does not support WebAuthn passkeys. Use the Morpheus Windows desktop app or a supported browser.');
   }
@@ -1566,6 +1581,66 @@ function describeWebAuthnError(error, action) {
     return `This passkey is already registered. Use “Add another passkey” only for a different authenticator.`;
   }
   return `${action} failed: ${error && error.message ? error.message : 'Unknown passkey error'}`;
+}
+
+async function saveOwnerEmail() {
+  const status = document.getElementById('ownerEmailState');
+  const email = document.getElementById('ownerEmailInput').value.trim();
+  if (!email) {
+    status.textContent = 'Enter the owner email address.';
+    return;
+  }
+  try {
+    const result = await requestJson('/api/owner-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email,
+        current_password: settingsPasswordConfigured
+          ? document.getElementById('ownerPasswordInput').value
+          : null,
+      }),
+    });
+    ownerEmailConfigured = result.configured;
+    status.textContent = ownerEmailConfigured
+      ? `Owner recovery email saved: ${result.email_masked}.`
+      : 'Owner recovery email was not saved.';
+    await refreshDashboard();
+  } catch (error) {
+    status.textContent = `Could not save owner email: ${error.message}`;
+  }
+}
+
+async function sendOwnerOtp() {
+  const status = document.getElementById('ownerEmailState');
+  try {
+    const result = await requestJson('/api/owner-email/otp/send', { method: 'POST' });
+    status.textContent = `A 6-digit recovery OTP was sent to ${result.email_masked}. It expires in 5 minutes.`;
+    document.getElementById('ownerOtpInput').focus();
+  } catch (error) {
+    status.textContent = `Could not send recovery OTP: ${error.message}`;
+  }
+}
+
+async function verifyOwnerOtp() {
+  const status = document.getElementById('ownerEmailState');
+  const otp = document.getElementById('ownerOtpInput').value.trim();
+  if (!/^\d{6}$/.test(otp)) {
+    status.textContent = 'Enter the 6-digit recovery OTP.';
+    return;
+  }
+  try {
+    const result = await requestJson('/api/owner-email/otp/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ otp }),
+    });
+    pendingRecoveryAuthorization = result.authorization;
+    document.getElementById('ownerOtpInput').value = '';
+    status.textContent = 'Recovery OTP verified. One sensitive action is now approved for 60 seconds.';
+  } catch (error) {
+    status.textContent = `Recovery OTP verification failed: ${error.message}`;
+  }
 }
 
 async function registerPasskey() {
@@ -1939,13 +2014,9 @@ document.getElementById('settingsPasswordButton').addEventListener('click', () =
   document.getElementById('settingsPasswordForm').hidden = false;
   document.getElementById('newOwnerPassword').focus();
 });
-document.getElementById('passkeyButton').addEventListener('click', registerPasskey);
-document.getElementById('passkeyRecoveryButton').addEventListener('click', useRecoveryCode);
-document.getElementById('hideRecoveryCodesButton').addEventListener('click', () => {
-  document.getElementById('recoveryCodes').textContent = '';
-  document.getElementById('recoveryCodes').hidden = true;
-  document.getElementById('hideRecoveryCodesButton').hidden = true;
-});
+document.getElementById('saveOwnerEmailButton').addEventListener('click', saveOwnerEmail);
+document.getElementById('sendOwnerOtpButton').addEventListener('click', sendOwnerOtp);
+document.getElementById('verifyOwnerOtpButton').addEventListener('click', verifyOwnerOtp);
 document.getElementById('cancelOwnerPasswordButton').addEventListener('click', () => {
   document.getElementById('settingsPasswordForm').hidden = true;
   document.getElementById('passwordFormMessage').textContent = '';

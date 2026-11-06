@@ -10,6 +10,9 @@ import sys
 import tempfile
 import threading
 import time
+import smtplib
+import ssl
+from email.message import EmailMessage
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -62,6 +65,8 @@ from .models import (
     PasskeyRecoveryRequest,
     PasskeyRegistrationOptionsRequest,
     SettingsPasswordRequest,
+    OwnerEmailRequest,
+    OwnerEmailOtpRequest,
 )
 from .tool_catalog import TOOL_CATALOG
 from .expansion import DnsEntropyMonitor, PowerShellLogMonitor
@@ -74,6 +79,7 @@ from .auth import (
     verify_owner_password,
 )
 from .passkeys import PasskeyManager
+from .email_otp import EmailOtpManager
 
 ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
 DATA_ROOT = Path(os.environ.get("MORPHEUS_DATA_DIR", ROOT / "data"))
@@ -154,6 +160,7 @@ last_scan_error: str | None = None
 LOGGER = logging.getLogger(__name__)
 SETTINGS_PASSWORD_PATH = DATA_ROOT / "settings-password.json"
 PASSKEYS_PATH = DATA_ROOT / "passkeys.json"
+OWNER_EMAIL_PATH = DATA_ROOT / "owner-email.json"
 CONFIG_WRITE_LOCK = threading.Lock()
 AUTH_FAILURE_LIMITER = AuthFailureLimiter()
 WEBAUTHN_ORIGIN = os.environ.get("MORPHEUS_WEBAUTHN_ORIGIN", "http://localhost:8080")
@@ -182,6 +189,7 @@ def _write_config_file(config: dict) -> None:
     _write_json_file(CONFIG_PATH, config)
 
 passkey_manager = PasskeyManager(PASSKEYS_PATH, _write_json_file)
+email_otp_manager = EmailOtpManager(_write_json_file, OWNER_EMAIL_PATH, passkey_manager)
 
 def _decode_base64url(value: str) -> bytes:
     if not value or len(value) > 8192:
@@ -696,10 +704,100 @@ def _check_auth_throttle(client: str) -> None:
 
 def require_sensitive_authorization(token: str | None, request: Request):
     client = _client_auth_key(request)
-    if not passkey_manager.status()["configured"]:
-        raise HTTPException(status_code=403, detail="Enroll a passkey before making sensitive changes.")
+    if not email_otp_manager.status()["configured"] and not passkey_manager.status()["configured"]:
+        raise HTTPException(status_code=403, detail="Configure the owner email or enroll a passkey before making sensitive changes.")
     if not passkey_manager.consume_grant(token, client):
-        raise HTTPException(status_code=401, detail="A valid, unused passkey approval is required.")
+        raise HTTPException(status_code=401, detail="A valid, unused owner email OTP approval or legacy passkey approval is required.")
+
+def _smtp_status():
+    host = str(os.environ.get("MORPHEUS_SMTP_HOST", "")).strip()
+    sender = str(os.environ.get("MORPHEUS_SMTP_FROM", "")).strip()
+    port = str(os.environ.get("MORPHEUS_SMTP_PORT", "587")).strip()
+    return {"configured": bool(host and sender), "host_configured": bool(host), "sender_configured": bool(sender), "port": port}
+
+def _send_owner_email(email: str, otp: str):
+    smtp_status = _smtp_status()
+    if not smtp_status["configured"]:
+        raise RuntimeError("Email delivery is not configured. Set MORPHEUS_SMTP_HOST and MORPHEUS_SMTP_FROM before sending recovery codes.")
+    host = str(os.environ.get("MORPHEUS_SMTP_HOST", "")).strip()
+    port = int(os.environ.get("MORPHEUS_SMTP_PORT", "587"))
+    username = str(os.environ.get("MORPHEUS_SMTP_USERNAME", "")).strip()
+    password = str(os.environ.get("MORPHEUS_SMTP_PASSWORD", ""))
+    sender = str(os.environ.get("MORPHEUS_SMTP_FROM", "")).strip()
+    use_ssl = str(os.environ.get("MORPHEUS_SMTP_SSL", "false")).strip().lower() in {"1", "true", "yes"}
+
+    message = EmailMessage()
+    message["Subject"] = "Your Morpheus recovery code"
+    message["From"] = sender
+    message["To"] = email
+    message.set_content(
+        "Your Morpheus one-time recovery code is:\n\n"
+        f"{otp}\n\n"
+        "This code expires in 5 minutes and can only be used once."
+    )
+    context = ssl.create_default_context()
+    if use_ssl or port == 465:
+        with smtplib.SMTP_SSL(host, port, timeout=15, context=context) as server:
+            if username:
+                server.login(username, password)
+            server.send_message(message)
+    else:
+        with smtplib.SMTP(host, port, timeout=15) as server:
+            server.ehlo()
+            server.starttls(context=context)
+            server.ehlo()
+            if username:
+                server.login(username, password)
+            server.send_message(message)
+
+@app.get("/api/owner-email/status")
+def owner_email_status():
+    return {**email_otp_manager.status(), "smtp": _smtp_status()}
+
+@app.post("/api/owner-email")
+def set_owner_email(payload: OwnerEmailRequest, request: Request):
+    _require_webauthn_origin(request)
+    client = _client_auth_key(request)
+    _check_auth_throttle(client)
+    current = read_settings_password()
+    if current and not verify_settings_password(payload.current_password, current):
+        AUTH_FAILURE_LIMITER.record_failure(client)
+        raise HTTPException(status_code=401, detail="The current owner settings password is incorrect.")
+    try:
+        email = email_otp_manager.set_profile(payload.email)
+    except ValueError as exc:
+        AUTH_FAILURE_LIMITER.record_failure(client)
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    AUTH_FAILURE_LIMITER.record_success(client)
+    return {**email_otp_manager.status(), "smtp": _smtp_status()}
+
+@app.post("/api/owner-email/otp/send")
+def send_owner_email_otp(request: Request):
+    _require_webauthn_origin(request)
+    client = _client_auth_key(request)
+    _check_auth_throttle(client)
+    try:
+        otp, email = email_otp_manager.request_otp(client)
+        _send_owner_email(email, otp)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (RuntimeError, smtplib.SMTPException, OSError, ssl.SSLError, ValueError) as exc:
+        AUTH_FAILURE_LIMITER.record_failure(client)
+        raise HTTPException(status_code=503, detail=f"Could not send recovery email: {exc}") from exc
+    AUTH_FAILURE_LIMITER.record_success(client)
+    return {**email_otp_manager.status(), "expires_in_seconds": 300}
+
+@app.post("/api/owner-email/otp/verify")
+def verify_owner_email_otp(payload: OwnerEmailOtpRequest, request: Request):
+    _require_webauthn_origin(request)
+    client = _client_auth_key(request)
+    _check_auth_throttle(client)
+    token = email_otp_manager.verify_otp(payload.otp, client)
+    if not token:
+        AUTH_FAILURE_LIMITER.record_failure(client)
+        raise HTTPException(status_code=401, detail="The recovery OTP is invalid, expired, or already used.")
+    AUTH_FAILURE_LIMITER.record_success(client)
+    return {"authorization": token, "expires_in_seconds": 60}
 
 @app.get("/api/passkeys/status")
 def passkey_status():

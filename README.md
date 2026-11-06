@@ -46,6 +46,19 @@ npm run build:win
 
 `npm run build:win` bundles the Python backend, firewall worker, and the official ClamAV 1.5.4 Windows x64 runtime before creating the installer. The ClamAV archive is downloaded from clamav.net during the build and SHA-256 verified; its license files are included. Users do not need Python, ClamAV, or FreshClam installed separately. The installer is machine-wide, installs under Windows' protected Program Files location, and requires administrator approval. The desktop app itself runs as a standard user. The desktop shell starts and supervises the backend, minimizes to the system tray, and exposes the dashboard, timeline, static file analysis, quarantine list, Sysmon status, firewall rules, and scan controls. Press **F11** for an immersive fullscreen dashboard; press **F11** or **Escape** to exit.
 
+### Owner recovery email and SMTP
+
+Set the owner's email address in the dashboard under **Email approval for sensitive changes**. To deliver 6-digit recovery OTPs, configure SMTP for the Morpheus process using these environment variables:
+
+- `MORPHEUS_SMTP_HOST` - required SMTP server hostname
+- `MORPHEUS_SMTP_PORT` - SMTP port, default `587`
+- `MORPHEUS_SMTP_USERNAME` - optional SMTP login name
+- `MORPHEUS_SMTP_PASSWORD` - optional SMTP password or app password
+- `MORPHEUS_SMTP_FROM` - required sender address
+- `MORPHEUS_SMTP_SSL` - set to `true` for implicit TLS, otherwise STARTTLS is used
+
+For example, development mode can be launched after setting these variables in PowerShell. Never commit SMTP passwords to this repository. Recovery OTPs expire after five minutes, allow five verification attempts, and are client-bound to the local Morpheus window.
+
 The installer offers an unchecked option to enable Windows Firewall dropped-packet logging using the standard log path. This only configures logging; automatic inbound IP blocking remains off until the owner enables it in Morpheus and authorizes the change with a passkey. ClamAV scanner binaries are installed with Morpheus, but malware signatures are not bundled because they become stale. After setup, enroll a passkey and select **Update ClamAV signatures** to download the initial database from the official update mirror. The update requires an internet connection and explicit owner approval.
 
 The Windows installer also packages a small, self-contained uninstall helper and adds an **Uninstall Morpheus Defense** shortcut to the Start Menu. The helper checks the standard Windows uninstall registration and opens Windows Apps settings; the device owner completes removal there. It does not gate uninstall with a password, rewrite uninstall registration, or delete files itself. The desktop app allows only one running instance and selects an available loopback port for its backend. Building the Windows installer requires the .NET 8 SDK to publish this helper.
