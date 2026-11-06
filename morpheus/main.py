@@ -65,8 +65,9 @@ from .models import (
 )
 from .tool_catalog import TOOL_CATALOG
 from .expansion import DnsEntropyMonitor, PowerShellLogMonitor
+from .network_guard import WindowsFirewallLogMonitor
 from .canary import CanaryMonitor
-from .risk import explainable_risk
+from .risk import explainable_risk, protection_summary
 from .auth import (
     AuthFailureLimiter,
     hash_owner_password,
@@ -104,6 +105,7 @@ timeline = AttackTimeline(engine.db)
 quarantine = engine.quarantine
 dns_monitor = DnsEntropyMonitor()
 powershell_monitor = PowerShellLogMonitor()
+inbound_scan_monitor = WindowsFirewallLogMonitor()
 canary_monitor = CanaryMonitor(DATA_ROOT / "canaries")
 defender_health_monitor = DefenderHealthMonitor()
 filesystem_event_monitor = SelectedFolderEventMonitor()
@@ -252,6 +254,33 @@ def events(limit: int = 200):
 @app.get("/api/status")
 def status():
     config = engine.config()
+    risk_summary = explainable_risk(engine.db.list_events(200))
+    quarantine_status = {
+        "folder": str(quarantine.root),
+        "categories": ["files", "apps", "folders"],
+        "item_count": (
+            len(list(quarantine.root.rglob("*.quarantine")))
+            + len(list(quarantine.root.rglob("*.folder")))
+        ),
+        "category_counts": {
+            category: sum(
+                len(list((quarantine.root / category).rglob(suffix)))
+                for suffix in ("*.quarantine", "*.folder")
+            )
+            for category in ("files", "apps", "folders")
+        },
+        "containment_failures": engine.containment_failures,
+    }
+    quarantine_status["total_size_bytes"] = sum(
+        path.stat().st_size
+        if path.is_file()
+        else sum(child.stat().st_size for child in path.rglob("*") if child.is_file())
+        for path in (
+            list(quarantine.root.rglob("*.quarantine"))
+            + list(quarantine.root.rglob("*.folder"))
+        )
+    )
+    quarantine_status["containment_active"] = quarantine_status["item_count"] > 0
     return {
         "running": True,
         "event_count": engine.db.count(),
@@ -281,13 +310,25 @@ def status():
             "powershell": powershell_monitor.status(bool(config.get("powershell_log_monitoring", False))),
             "process_tree_enabled": bool(config.get("process_tree_monitoring", True)),
             "canary": canary_monitor.status(bool(config.get("canary_monitoring", False))),
+            "inbound_scan": inbound_scan_monitor.status(bool(config.get("automatic_inbound_scan_blocking", False))),
         },
         "defender": defender_health_monitor.status(),
         "clamav": clamav_scanner.status(),
         "filesystem_monitor": filesystem_event_monitor.status(
             bool(config.get("download_monitoring", False))
         ),
-        "risk": explainable_risk(engine.db.list_events(200)),
+        "risk": risk_summary,
+        "quarantine": quarantine_status,
+        "protection": protection_summary(
+            config=config,
+            defender=defender_health_monitor.status(),
+            clamav=clamav_scanner.status(),
+            monitoring_running=bool(worker_thread and worker_thread.is_alive() and not worker_stop.is_set()),
+            passkey_configured=passkey_manager.status()["configured"],
+            risk=risk_summary,
+            isolation_item_count=quarantine_status["item_count"],
+            containment_failures=engine.containment_failures,
+        ),
     }
 
 @app.get("/api/journal/verify")
@@ -323,6 +364,26 @@ def startup_persistence():
 @app.get("/api/risk")
 def risk_summary():
     return explainable_risk(engine.db.list_events(200))
+
+@app.get("/api/protection")
+def protection_status():
+    config = engine.config()
+    risk = explainable_risk(engine.db.list_events(200))
+    item_count = len(list(quarantine.root.rglob("*.quarantine"))) + len(list(quarantine.root.rglob("*.folder")))
+    return protection_summary(
+        config=config,
+        defender=defender_health_monitor.status(),
+        clamav=clamav_scanner.status(),
+        monitoring_running=bool(worker_thread and worker_thread.is_alive() and not worker_stop.is_set()),
+        passkey_configured=passkey_manager.status()["configured"],
+        risk=risk,
+        isolation_item_count=item_count,
+        containment_failures=engine.containment_failures,
+    )
+
+@app.get("/api/firewall/worker")
+def firewall_worker_status():
+    return engine.firewall.worker_status()
 
 @app.post("/api/scan-file")
 def scan_file(payload: ScanFileRequest):
@@ -516,11 +577,25 @@ def quarantine_status():
             len(list((quarantine.root / category).rglob(suffix)))
             for suffix in suffixes
         )
+    items = list(quarantine.root.rglob("*.quarantine")) + list(quarantine.root.rglob("*.folder"))
+    total_size = 0
+    for path in items:
+        try:
+            total_size += (
+                path.stat().st_size
+                if path.is_file()
+                else sum(child.stat().st_size for child in path.rglob("*") if child.is_file())
+            )
+        except OSError:
+            continue
     return {
         "folder": str(quarantine.root),
         "categories": ["files", "apps", "folders"],
         "item_count": len(list(quarantine.root.rglob("*.quarantine"))) + len(list(quarantine.root.rglob("*.folder"))),
         "category_counts": category_counts,
+        "total_size_bytes": total_size,
+        "containment_active": bool(items),
+        "containment_failures": engine.containment_failures,
     }
 
 @app.post("/api/quarantine")
@@ -812,6 +887,15 @@ def evaluate_processes():
                     detections.extend(canary_monitor.poll(engine.db, engine.journal))
                 except Exception:
                     LOGGER.exception("Canary file monitoring failed")
+            try:
+                detections.extend(inbound_scan_monitor.poll(
+                    config,
+                    engine.firewall,
+                    engine.db,
+                    engine.journal,
+                ))
+            except Exception:
+                LOGGER.exception("Inbound firewall log monitoring failed")
         except Exception as exc:
             last_scan_error = str(exc)
             raise

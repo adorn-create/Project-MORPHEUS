@@ -82,6 +82,34 @@
     .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 12px rgba(124, 242, 189, .55); }
     .connection.error .dot { background: var(--red); box-shadow: 0 0 12px rgba(255, 130, 147, .45); }
     .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+    .protection-panel {
+      margin-bottom: 14px;
+      padding: 18px 20px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: linear-gradient(120deg, rgba(16, 25, 35, .98), rgba(13, 19, 26, .98));
+    }
+    .protection-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+    .protection-score { font-size: 30px; font-weight: 700; color: #eff8ff; }
+    .protection-meta { color: var(--muted); font-size: 13px; text-align: right; }
+    .protection-bar {
+      height: 10px;
+      margin-top: 13px;
+      border-radius: 999px;
+      background: #07111f;
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .protection-bar-fill {
+      height: 100%;
+      width: 0;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--red), var(--cyan), var(--green));
+      transition: width .35s ease;
+    }
+    .protection-details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 13px; }
+    .protection-detail { min-height: 52px; border-left: 2px solid #6d4d31; padding-left: 10px; }
+    .protection-detail strong { display: block; margin-bottom: 4px; font-size: 13px; }
     .card, .panel {
       border: 1px solid var(--border);
       border-radius: 10px;
@@ -180,6 +208,7 @@
       .grid { grid-template-columns: 1fr; }
       .card { min-height: 98px; }
       .tools-grid { grid-template-columns: 1fr; }
+      .protection-details { grid-template-columns: 1fr; }
       .overview { align-items: flex-start; flex-direction: column; }
       .scan-panel { align-items: flex-start; flex-direction: column; }
       .assistant-controls, .assistant-form { grid-template-columns: 1fr; }
@@ -204,6 +233,21 @@
     <section class="overview" aria-labelledby="overviewTitle">
       <div><p class="eyebrow">Security overview</p><h2 id="overviewTitle">Endpoint activity</h2><p>Review observed behavior from this device.</p></div>
       <div class="connection" id="connectionStatus" role="status"><span class="dot"></span><span>Connecting to local service</span></div>
+    </section>
+
+    <section class="protection-panel" aria-label="Device protection status">
+      <div class="protection-header">
+        <div><p class="eyebrow">Protection coverage</p><div class="protection-score"><span id="protectionScore">Checking</span></div></div>
+        <div class="protection-meta" id="threatLevel">Threat level: Checking</div>
+      </div>
+      <div class="protection-bar" id="protectionBar" role="progressbar" aria-label="Device protection coverage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="protection-bar-fill" id="protectionBarFill"></div>
+      </div>
+      <div class="protection-details">
+        <div class="protection-detail"><strong id="isolatedItemCount">0 isolated items</strong><span class="subtle" id="isolatedSize">0 bytes isolated</span></div>
+        <div class="protection-detail"><strong id="isolationLevel">Isolation inactive</strong><span class="subtle" id="containmentStatus">No isolated content</span></div>
+        <div class="protection-detail"><strong id="protectionLevel">Protection checking</strong><span class="subtle" id="protectionExplanation">Calculating coverage...</span></div>
+      </div>
     </section>
 
     <section class="grid" aria-label="Security summary">
@@ -810,6 +854,54 @@ function renderRiskSummary(data) {
     : `No matching alerts in the last ${data.window_minutes} minutes. This does not prove the computer is safe.`;
 }
 
+function formatBytes(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value <= 0) return '0 bytes isolated';
+  const units = ['bytes', 'KB', 'MB', 'GB', 'TB'];
+  let size = value;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]} isolated`;
+}
+
+function renderProtectionSummary(protection, quarantine, risk) {
+  const fallback = protection && typeof protection.score === 'number';
+  const score = fallback ? protection.score : 0;
+  const protectionLevel = fallback ? protection.level : 'weak';
+  const itemCount = Number(quarantine?.item_count || protection?.isolation_item_count || 0);
+  const totalSize = Number(quarantine?.total_size_bytes || 0);
+  const failures = Number(quarantine?.containment_failures || protection?.containment_failures || 0);
+  const threatLevel = String(risk?.level || protection?.risk_level || 'normal');
+
+  document.getElementById('protectionScore').textContent = `${score}%`;
+  const barFill = document.getElementById('protectionBarFill');
+  if (barFill.style) barFill.style.width = `${score}%`;
+  document.getElementById('protectionBar').setAttribute('aria-valuenow', String(score));
+  document.getElementById('protectionLevel').textContent =
+    `${protectionLevel.charAt(0).toUpperCase()}${protectionLevel.slice(1)} protection`;
+  document.getElementById('protectionExplanation').textContent =
+    protection?.explanation || 'Protection coverage could not be calculated.';
+  document.getElementById('threatLevel').textContent =
+    `Threat level: ${threatLevel.charAt(0).toUpperCase()}${threatLevel.slice(1)} (${risk?.score ?? protection?.risk_score ?? 0}/100)`;
+  document.getElementById('isolatedItemCount').textContent =
+    `${itemCount} isolated item${itemCount === 1 ? '' : 's'}`;
+  document.getElementById('isolatedSize').textContent = formatBytes(totalSize);
+  document.getElementById('isolationLevel').textContent =
+    itemCount ? `${Math.min(100, 40 + itemCount * 10)}% isolated` : 'Isolation inactive';
+  document.getElementById('containmentStatus').textContent = failures
+    ? `${failures} containment action${failures === 1 ? '' : 's'} failed; review immediately`
+    : itemCount
+      ? 'Isolated content is actively monitored for access attempts'
+      : 'No isolated content to contain';
+  const bar = document.getElementById('protectionBar');
+  bar.classList.remove('severity-critical', 'severity-high', 'severity-medium');
+  if (score < 40) bar.classList.add('severity-critical');
+  else if (score < 65) bar.classList.add('severity-medium');
+}
+
 function appendAssistantMessage(role, content) {
   const message = document.createElement('div');
   message.className = `assistant-message ${role}`;
@@ -869,6 +961,7 @@ async function refreshDashboard(includeFirewall = false) {
   renderSysmon(sysmon);
   renderProcessTree(processTree);
   renderRiskSummary(risk);
+  renderProtectionSummary(status.protection, status.quarantine, risk);
   settingsPasswordConfigured = Boolean(passwordStatus.configured);
   passkeyConfigured = Boolean(passkeyStatus.configured);
   document.getElementById('settingsPasswordState').textContent = settingsPasswordConfigured

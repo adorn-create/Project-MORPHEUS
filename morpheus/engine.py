@@ -32,6 +32,8 @@ class DefenseEngine:
             "total_processes": 0,
         }
         self.last_process_count = 0
+        self.containment_failures = 0
+        self._reported_isolation_access_attempts: set[tuple[int, str]] = set()
 
     @staticmethod
     def isolate_process(process, executable: Path) -> str:
@@ -54,6 +56,95 @@ class DefenseEngine:
             process.kill()
         return "isolated_process_terminated"
 
+    def check_isolation_access_attempts(self, process_snapshot: list[dict] | None = None) -> list[dict]:
+        root = self.quarantine.root.resolve()
+        detections = []
+        active_attempts = set()
+        if process_snapshot is not None:
+            process_iterator = [
+                {
+                    "pid": item.get("pid"),
+                    "name": item.get("name"),
+                    "exe": item.get("exe"),
+                    "cmdline": item.get("command_line"),
+                }
+                for item in process_snapshot
+            ]
+            snapshot_mode = True
+        else:
+            try:
+                process_iterator = psutil.process_iter(["pid", "name", "exe", "cmdline"])
+                snapshot_mode = False
+            except (AttributeError, OSError, psutil.Error):
+                return detections
+
+        for process in process_iterator:
+            try:
+                if snapshot_mode:
+                    info = process
+                    pid = int(info.get("pid") or 0)
+                else:
+                    info = process.info if hasattr(process, "info") else {}
+                    pid = int(info.get("pid") or process.pid)
+                name = str(info.get("name") or "")
+                candidates = []
+                executable = info.get("exe")
+                if executable:
+                    candidates.append(str(executable))
+                candidates.extend(str(value) for value in (info.get("cmdline") or []) if value)
+
+                matched_path = None
+                for candidate in candidates:
+                    try:
+                        candidate_path = Path(candidate).expanduser().resolve()
+                        if candidate_path == root or root in candidate_path.parents:
+                            matched_path = str(candidate_path)
+                            break
+                    except (OSError, RuntimeError, TypeError, ValueError):
+                        continue
+                if matched_path is None:
+                    continue
+
+                identity = (pid, matched_path)
+                active_attempts.add(identity)
+                countermeasure = "isolated_access_detected"
+                if identity not in self._reported_isolation_access_attempts:
+                    try:
+                        process_handle = psutil.Process(pid) if snapshot_mode else process
+                        process_handle.terminate()
+                        try:
+                            process_handle.wait(timeout=2)
+                        except (AttributeError, psutil.TimeoutExpired, psutil.Error):
+                            process_handle.kill()
+                        countermeasure = f"countermeasure_process_terminated:{pid}"
+                    except (AttributeError, OSError, psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                        self.containment_failures += 1
+                        countermeasure = f"countermeasure_failed:{pid}"
+
+                    event = {
+                        "timestamp": utcnow(),
+                        "kind": "isolated_content_access_attempt",
+                        "severity": "critical",
+                        "source": f"Process (PID {pid})",
+                        "target": matched_path,
+                        "confidence": 1.0,
+                        "evidence": json.dumps({
+                            "process_name": name,
+                            "path": matched_path,
+                            "countermeasure": countermeasure,
+                        }),
+                        "response": countermeasure,
+                    }
+                    self.db.add(event)
+                    self.journal.append(event)
+                    detections.append(event)
+                    self._reported_isolation_access_attempts.add(identity)
+            except (AttributeError, OSError, psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, ValueError):
+                continue
+
+        self._reported_isolation_access_attempts.intersection_update(active_attempts)
+        return detections
+
     def config(self):
         return json.loads(self.config_path.read_text(encoding="utf-8"))
 
@@ -63,6 +154,7 @@ class DefenseEngine:
         active_tool_processes = set()
         active_lolbin_processes = set()
         processes = snapshot_processes(config.get("excluded_processes", []))
+        detected.extend(self.check_isolation_access_attempts(processes))
         self.last_process_count = len(processes)
         tree_enabled = config.get("process_tree_monitoring", True)
         lineage_processes = set()

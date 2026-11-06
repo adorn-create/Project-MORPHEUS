@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import uuid
@@ -71,6 +72,13 @@ class QuarantineManager:
         shutil.move(str(source), str(destination))
         if not destination.is_dir():
             raise OSError("Folder isolation move failed.")
+        if os.name == "nt":
+            subprocess.run(
+                ["icacls", str(destination), "/inheritance:r", "/deny", "*S-1-1-0:(OI)(CI)(X)"],
+                check=False,
+                capture_output=True,
+                timeout=10,
+            )
         metadata = {
             "original": str(source),
             "quarantine_path": str(destination),
@@ -107,7 +115,13 @@ class QuarantineManager:
             "category": category,
         }
         metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-        subprocess.run(["icacls", str(destination), "/deny", "*S-1-1-0:(X)"], check=False, capture_output=True)
+        if os.name == "nt":
+            subprocess.run(
+                ["icacls", str(destination), "/inheritance:r", "/deny", "*S-1-1-0:(X)"],
+                check=False,
+                capture_output=True,
+                timeout=10,
+            )
         source.unlink()
         return metadata
 
