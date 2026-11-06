@@ -1534,9 +1534,14 @@ async function requestSensitiveAuthorization() {
     throw new Error('This browser does not support WebAuthn passkeys. Use the Morpheus Windows desktop app or a supported browser.');
   }
   const challenge = await requestJson('/api/passkeys/authentication/options', { method: 'POST' });
-  const credential = await navigator.credentials.get({
-    publicKey: prepareWebAuthnOptions(challenge.public_key),
-  });
+  let credential;
+  try {
+    credential = await navigator.credentials.get({
+      publicKey: prepareWebAuthnOptions(challenge.public_key),
+    });
+  } catch (error) {
+    throw new Error(describeWebAuthnError(error, 'Passkey approval'));
+  }
   if (!credential) throw new Error('Passkey approval was cancelled.');
   const result = await requestJson('/api/passkeys/authentication/verify', {
     method: 'POST',
@@ -1547,6 +1552,20 @@ async function requestSensitiveAuthorization() {
     }),
   });
   return result.authorization;
+}
+
+function describeWebAuthnError(error, action) {
+  const name = error && error.name ? error.name : '';
+  if (name === 'NotAllowedError') {
+    return `${action} was cancelled, timed out, or blocked by Windows security. Unlock Windows Hello and try again, or use a recovery code.`;
+  }
+  if (name === 'SecurityError') {
+    return `${action} was blocked by browser security. Open Morpheus through its local application window and try again.`;
+  }
+  if (name === 'InvalidStateError') {
+    return `This passkey is already registered. Use “Add another passkey” only for a different authenticator.`;
+  }
+  return `${action} failed: ${error && error.message ? error.message : 'Unknown passkey error'}`;
 }
 
 async function registerPasskey() {
@@ -1571,9 +1590,14 @@ async function registerPasskey() {
       headers,
       body: JSON.stringify(body),
     });
-    const credential = await navigator.credentials.create({
-      publicKey: prepareWebAuthnOptions(options.public_key),
-    });
+    let credential;
+    try {
+      credential = await navigator.credentials.create({
+        publicKey: prepareWebAuthnOptions(options.public_key),
+      });
+    } catch (error) {
+      throw new Error(describeWebAuthnError(error, 'Passkey enrollment'));
+    }
     if (!credential) throw new Error('Passkey registration was cancelled.');
     const result = await requestJson('/api/passkeys/registration/verify', {
       method: 'POST',
@@ -1691,9 +1715,6 @@ async function saveOwnerPassword() {
     }
     try {
       const headers = { 'Content-Type': 'application/json' };
-      if (passkeyConfigured) {
-        headers['X-Morpheus-Authorization'] = await requestSensitiveAuthorization();
-      }
       await requestJson('/api/settings-password', {
         method: 'POST',
         headers,

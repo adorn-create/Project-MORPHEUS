@@ -847,14 +847,14 @@ def set_settings_password(payload: SettingsPasswordRequest, request: Request):
     _check_auth_throttle(client)
     with CONFIG_WRITE_LOCK:
         current = read_settings_password()
-        if passkey_manager.status()["configured"]:
+        if current and not verify_settings_password(payload.current_password, current):
+            AUTH_FAILURE_LIMITER.record_failure(client)
+            raise HTTPException(status_code=401, detail="The current owner settings password is incorrect.")
+        if current is None and passkey_manager.status()["configured"]:
             require_sensitive_authorization(
                 request.headers.get("x-morpheus-authorization"),
                 request,
             )
-        if current and not verify_settings_password(payload.current_password, current):
-            AUTH_FAILURE_LIMITER.record_failure(client)
-            raise HTTPException(status_code=401, detail="The current owner settings password is incorrect.")
         AUTH_FAILURE_LIMITER.record_success(client)
         _write_json_file(SETTINGS_PASSWORD_PATH, {
             "algorithm": "argon2id",

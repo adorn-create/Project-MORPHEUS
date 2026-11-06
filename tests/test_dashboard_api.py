@@ -438,6 +438,32 @@ def test_settings_password_requires_current_password_to_change(monkeypatch, tmp_
     assert accepted.status_code == 200
 
 
+def test_settings_password_change_allows_current_password_when_passkey_is_configured(monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "SETTINGS_PASSWORD_PATH", tmp_path / "settings-password.json")
+    manager = main.PasskeyManager(tmp_path / "passkeys.json", main._write_json_file)
+    monkeypatch.setattr(main, "passkey_manager", manager)
+    client = TestClient(main.app)
+    setup = client.post("/api/settings-password", json={"password": "a-strong-owner-password"})
+    assert setup.status_code == 200
+
+    manager.add_credential({
+        "credential_id": "AQ",
+        "public_key": "Ag",
+        "sign_count": 0,
+    })
+    denied = client.post("/api/settings-password", json={
+        "password": "a-different-owner-password",
+        "current_password": "wrong-password",
+    })
+    accepted = client.post("/api/settings-password", json={
+        "password": "a-different-owner-password",
+        "current_password": "a-strong-owner-password",
+    })
+
+    assert denied.status_code == 401
+    assert accepted.status_code == 200
+
+
 def test_settings_password_accepts_ten_characters_and_rejects_nine(monkeypatch, tmp_path):
     monkeypatch.setattr(main, "SETTINGS_PASSWORD_PATH", tmp_path / "settings-password.json")
     monkeypatch.setattr(
