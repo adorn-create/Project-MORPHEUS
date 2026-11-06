@@ -284,7 +284,10 @@ class ComprehensiveReviewSystem:
                             "outlook.exe",
                             "acrord32.exe",
                         }:
-                            identity = (pid, f"parent:{parent.pid()}")
+                            parent_pid = info.get("ppid")
+                            if not parent_pid:
+                                parent_pid = parent.pid()
+                            identity = (pid, f"parent:{parent_pid}")
                             active_signals.add(identity)
                             if identity not in self._reported_process_signals:
                                 self.process_threat_vector(
@@ -295,7 +298,12 @@ class ComprehensiveReviewSystem:
                                 )
                                 detected.append(identity)
                                 self._reported_process_signals.add(identity)
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            except (
+                AttributeError,
+                psutil.NoSuchProcess,
+                psutil.AccessDenied,
+                psutil.ZombieProcess,
+            ):
                 continue
         self._reported_process_signals.intersection_update(active_signals)
         return detected
@@ -316,12 +324,14 @@ class ComprehensiveReviewSystem:
 
     def process_network_packet(self, packet):
         try:
-            from scapy.all import ARP, DNSQR
-        except ImportError as exc:
+            from scapy.all import ARP as ScapyARP, DNSQR as ScapyDNSQR
+        except (AttributeError, ImportError) as exc:
             raise RuntimeError("Scapy is required for DNS/ARP packet review.") from exc
 
-        if packet.haslayer(DNSQR):
-            raw_name = packet[DNSQR].qname
+        if packet is None:
+            return
+        if packet.haslayer(ScapyDNSQR):
+            raw_name = packet[ScapyDNSQR].qname
             if isinstance(raw_name, bytes):
                 qname = raw_name.decode("utf-8", errors="ignore").rstrip(".").lower()
             else:
@@ -349,12 +359,16 @@ class ComprehensiveReviewSystem:
                         "This heuristic can flag legitimate services.",
                     )
 
-        if packet.haslayer(ARP):
-            arp = packet[ARP]
-            if int(arp.op) != 2:
+        if packet.haslayer(ScapyARP):
+            arp = packet[ScapyARP]
+            try:
+                operation = int(arp.op)
+            except (TypeError, ValueError):
                 return
-            sender_ip = str(arp.psrc)
-            sender_mac = str(arp.hwsrc).casefold()
+            if operation != 2:
+                return
+            sender_ip = "" if arp.psrc is None else str(arp.psrc)
+            sender_mac = "" if arp.hwsrc is None else str(arp.hwsrc).casefold()
             try:
                 address = ipaddress.ip_address(sender_ip)
             except ValueError:

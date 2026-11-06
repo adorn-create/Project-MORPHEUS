@@ -28,6 +28,14 @@ def parse_public_ipv4(value: str):
     return address
 
 
+def block_rule_name(remote_ip: str) -> str:
+    address = parse_public_ip(remote_ip)
+    if address is None:
+        raise ValueError("Only globally routable IPv4 or IPv6 addresses can be blocked.")
+    suffix = hashlib.sha256(str(address).encode("ascii")).hexdigest()[:12]
+    return f"Morpheus-Block-{suffix}"
+
+
 def scan_block_rule_name(remote_ip: str) -> str:
     address = parse_public_ip(remote_ip)
     if address is None:

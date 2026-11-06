@@ -324,7 +324,7 @@ def test_automatic_inbound_scan_blocking_is_opt_in(monkeypatch, tmp_path):
         )
 
     assert response.status_code == 200
-    assert "automatic_inbound_scan_blocking" not in response.json()
+    assert response.json()["automatic_inbound_scan_blocking"] is True
 
 
 def test_config_replace_failure_preserves_previous_configuration(monkeypatch, tmp_path):
@@ -586,20 +586,32 @@ def test_status_does_not_run_full_journal_verification(monkeypatch):
 
 
 def test_firewall_enumeration_timeout_is_reported(monkeypatch):
+    monkeypatch.setattr(
+        main.engine.firewall,
+        "list_morpheus_rules",
+        lambda: (_ for _ in ()).throw(main.FirewallWorkerError("Firewall listing timed out.")),
+    )
     response = TestClient(main.app).get("/api/firewall")
-    assert response.status_code == 404
+    assert response.status_code == 503
+    assert "Firewall listing timed out" in response.json()["detail"]
 
 
 def test_allow_inbound_scan_source_removes_block_and_persists_owner_allowlist(
     monkeypatch, tmp_path
 ):
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(main, "CONFIG_PATH", config_path)
     headers = _passkey_authorization(monkeypatch, tmp_path)
+    monkeypatch.setattr(main.engine.firewall, "remove_rule_by_name", lambda name: True)
     response = TestClient(main.app).post(
         "/api/firewall/allow",
         headers=headers,
         json={"remote_ip": "1.2.3.4"},
     )
-    assert response.status_code == 404
+    assert response.status_code == 200
+    assert response.json()["allowlisted"] is True
+    assert response.json()["remote_ip"] == "1.2.3.4"
 
 
 def test_allow_inbound_scan_source_rejects_private_ip(tmp_path, monkeypatch):
@@ -614,4 +626,4 @@ def test_allow_inbound_scan_source_rejects_private_ip(tmp_path, monkeypatch):
         json={"remote_ip": "192.168.1.10"},
     )
 
-    assert response.status_code == 404
+    assert response.status_code == 422

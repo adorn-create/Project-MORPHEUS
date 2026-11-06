@@ -1,10 +1,10 @@
 import json
 import subprocess
-import uuid
 import os
 from .firewall_worker import (
     RULE_NAME_PATTERN,
     WORKER_PIPE,
+    block_rule_name,
     parse_public_ip,
     scan_block_rule_name,
 )
@@ -24,7 +24,7 @@ class FirewallController:
             return False
         if self.use_worker:
             return self._request_worker({"operation": "add", "remote_ip": str(address)})
-        rule = f"Morpheus-Block-{uuid.uuid4().hex[:12]}"
+        rule = block_rule_name(str(address))
         result = subprocess.run([
             "netsh", "advfirewall", "firewall", "add", "rule",
             f"name={rule}", "dir=out", "action=block", "enable=yes",
@@ -62,6 +62,8 @@ class FirewallController:
                 text=True,
                 timeout=3,
             )
+        except FileNotFoundError as exc:
+            raise FirewallWorkerError("Windows Firewall rule management is unavailable on this system.") from exc
         except subprocess.TimeoutExpired as exc:
             raise FirewallWorkerError("Windows Firewall did not respond within 3 seconds.") from exc
         if result.returncode:

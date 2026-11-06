@@ -1,3 +1,4 @@
+from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 class ConfigUpdate(BaseModel):
@@ -18,6 +19,8 @@ class ConfigUpdate(BaseModel):
     scan_max_folder_bytes: int | None = Field(default=None, ge=1024, le=109_951_162_7776)
     scan_max_folder_files: int | None = Field(default=None, ge=1, le=100000)
     scan_timeout_seconds: float | None = Field(default=None, ge=1.0, le=3600.0)
+    automatic_inbound_scan_blocking: bool | None = None
+    inbound_scan_allowlist: list[str] | None = None
 
 class ScanFileRequest(BaseModel):
     path: str = Field(min_length=1, max_length=32768)
@@ -40,6 +43,10 @@ class AssistantChatRequest(BaseModel):
 
 class QuarantineRequest(BaseModel):
     path: str = Field(min_length=1, max_length=32768)
+
+class FirewallAddressRequest(BaseModel):
+    remote_ip: str = Field(min_length=1, max_length=45)
+    direction: Literal["inbound", "outbound"] = "outbound"
 
 class SettingsPasswordRequest(BaseModel):
     password: str = Field(min_length=10, max_length=1024)

@@ -7,6 +7,7 @@ import logging
 import os
 import shutil
 import sys
+import subprocess
 import tempfile
 import threading
 import time
@@ -61,6 +62,7 @@ from .models import (
     QuarantineRequest,
     ScanFileRequest,
     ScanFolderRequest,
+    FirewallAddressRequest,
     PasskeyCeremonyRequest,
     PasskeyRecoveryRequest,
     PasskeyRegistrationOptionsRequest,
@@ -80,6 +82,8 @@ from .auth import (
 )
 from .passkeys import PasskeyManager
 from .email_otp import EmailOtpManager
+from .firewall import FirewallController, FirewallWorkerError
+from .firewall_worker import block_rule_name, parse_public_ip, scan_block_rule_name
 
 ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
 DATA_ROOT = Path(os.environ.get("MORPHEUS_DATA_DIR", ROOT / "data"))
@@ -392,6 +396,91 @@ def protection_status():
 @app.get("/api/firewall/worker")
 def firewall_worker_status():
     return engine.firewall.worker_status()
+
+@app.get("/api/firewall")
+def list_firewall_rules():
+    try:
+        return engine.firewall.list_morpheus_rules()
+    except (FirewallWorkerError, OSError, subprocess.SubprocessError) as exc:
+        raise HTTPException(status_code=503, detail=f"Could not enumerate Windows Firewall rules: {exc}") from exc
+
+@app.post("/api/firewall")
+def add_firewall_rule(
+    payload: FirewallAddressRequest,
+    request: Request,
+    x_morpheus_authorization: str | None = Header(default=None),
+):
+    require_sensitive_authorization(x_morpheus_authorization, request)
+    address = parse_public_ip(payload.remote_ip)
+    if address is None:
+        raise HTTPException(status_code=422, detail="Only globally routable public IPv4 or IPv6 addresses can be blocked.")
+    try:
+        blocked = (
+            engine.firewall.block_inbound_remote(str(address))
+            if payload.direction == "inbound"
+            else engine.firewall.block_remote(str(address))
+        )
+    except (FirewallWorkerError, OSError) as exc:
+        raise HTTPException(status_code=503, detail=f"Windows Firewall did not apply the block: {exc}") from exc
+    if not blocked:
+        raise HTTPException(status_code=502, detail="Windows Firewall did not apply the IP block.")
+    name = (
+        scan_block_rule_name(str(address))
+        if payload.direction == "inbound"
+        else block_rule_name(str(address))
+    )
+    return {"ok": True, "remote_ip": str(address), "direction": payload.direction, "name": name}
+
+@app.delete("/api/firewall/{name}")
+def remove_firewall_rule(
+    name: str,
+    request: Request,
+    x_morpheus_authorization: str | None = Header(default=None),
+):
+    require_sensitive_authorization(x_morpheus_authorization, request)
+    from .firewall_worker import RULE_NAME_PATTERN
+    if not RULE_NAME_PATTERN.fullmatch(name):
+        raise HTTPException(status_code=422, detail="Only Morpheus-owned firewall rules can be removed.")
+    try:
+        removed = engine.firewall.remove_rule_by_name(name)
+    except (FirewallWorkerError, OSError) as exc:
+        raise HTTPException(status_code=503, detail=f"Windows Firewall did not remove the rule: {exc}") from exc
+    if not removed:
+        raise HTTPException(status_code=404, detail="The Morpheus firewall rule was not found or could not be removed.")
+    return {"ok": True, "name": name}
+
+@app.post("/api/firewall/allow")
+def allow_firewall_address(
+    payload: FirewallAddressRequest,
+    request: Request,
+    x_morpheus_authorization: str | None = Header(default=None),
+):
+    require_sensitive_authorization(x_morpheus_authorization, request)
+    address = parse_public_ip(payload.remote_ip)
+    if address is None:
+        raise HTTPException(status_code=422, detail="Only globally routable public IPv4 or IPv6 addresses can be allowed.")
+    normalized = str(address)
+    name = scan_block_rule_name(normalized)
+    removal_error = None
+    try:
+        engine.firewall.remove_rule_by_name(name)
+    except (FirewallWorkerError, OSError) as exc:
+        removal_error = str(exc)
+
+    with CONFIG_WRITE_LOCK:
+        config = engine.config()
+        allowlist = {
+            str(parsed)
+            for value in config.get("inbound_scan_allowlist", [])
+            if (parsed := parse_public_ip(value)) is not None
+        }
+        allowlist.add(normalized)
+        config["inbound_scan_allowlist"] = sorted(allowlist)
+        _write_config_file(config)
+    result = {"ok": True, "remote_ip": normalized, "allowlisted": True, "block_removed": removal_error is None}
+    if removal_error is not None:
+        result["block_removal_error"] = removal_error
+    return result
 
 @app.post("/api/scan-file")
 def scan_file(payload: ScanFileRequest):

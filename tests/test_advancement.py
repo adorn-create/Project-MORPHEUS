@@ -115,6 +115,40 @@ def test_process_host_snapshot_checks_every_running_process(tmp_path, monkeypatc
     assert visited == 5001
 
 
+def test_process_host_snapshot_uses_psutil_ppid_without_parent_pid_lookup(tmp_path, monkeypatch):
+    system = ComprehensiveReviewSystem(
+        db_name=tmp_path / "ledger.db",
+        canary_dir=tmp_path / "canaries",
+    )
+    alerts = []
+    system.process_threat_vector = lambda *args: alerts.append(args)
+
+    class Parent:
+        def name(self):
+            return "WINWORD.EXE"
+
+        def pid(self):
+            raise AssertionError("The process snapshot ppid must avoid a second parent lookup")
+
+    class Process:
+        info = {
+            "pid": 123,
+            "ppid": 321,
+            "name": "powershell.exe",
+            "cmdline": ["powershell.exe"],
+        }
+
+        def parent(self):
+            return Parent()
+
+    monkeypatch.setattr(Advancement.psutil, "process_iter", lambda fields: iter([Process()]))
+
+    detected = system.process_host_snapshot()
+
+    assert detected == [(123, "parent:321")]
+    assert alerts[0][0] == "Process Relationship Review"
+
+
 def test_dns_packet_review_alerts_on_high_entropy_label_without_storing_name(tmp_path):
     system = ComprehensiveReviewSystem(
         db_name=tmp_path / "ledger.db",
