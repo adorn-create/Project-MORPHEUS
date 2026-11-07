@@ -6,6 +6,33 @@ import subprocess
 import uuid
 from pathlib import Path
 
+FILE_ATTRIBUTE_ENCRYPTED = 0x4000
+
+
+def _windows_encrypted_attributes(path: Path) -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        attrs = ctypes.windll.kernel32.GetFileAttributesW(str(path))
+        return attrs != -1 and bool(attrs & FILE_ATTRIBUTE_ENCRYPTED)
+    except (AttributeError, OSError):
+        return False
+
+
+def _harden_isolated_acl(destination: Path, folder: bool) -> None:
+    if os.name != "nt":
+        return
+    rights = "(OI)(CI)(F)" if folder else "(F)"
+    command = [
+        "icacls", str(destination), "/inheritance:r",
+        "/grant:r", f"*S-1-5-18:{rights}",
+        "/grant:r", f"*S-1-5-32-544:{rights}",
+        "/deny", f"*S-1-5-11:{rights}",
+        "/deny", f"*S-1-1-0:{rights}",
+    ]
+    subprocess.run(command, check=False, capture_output=True, timeout=10)
+
 class QuarantineManager:
     def __init__(self, root: Path):
         self.root = root
@@ -63,6 +90,13 @@ class QuarantineManager:
             raise ValueError("The Morpheus isolated folder cannot be isolated.")
         if source == source.anchor:
             raise ValueError("A drive root cannot be isolated.")
+        encrypted = [
+            str(path)
+            for path in source.rglob("*")
+            if path.is_file() and _windows_encrypted_attributes(path)
+        ]
+        if _windows_encrypted_attributes(source) or encrypted:
+            raise ValueError("Encrypted EFS files and folders cannot be isolated because encryption prevents a secure, irreversible containment copy.")
 
         token = uuid.uuid4().hex
         category_root = self.root / "folders"
@@ -72,13 +106,7 @@ class QuarantineManager:
         shutil.move(str(source), str(destination))
         if not destination.is_dir():
             raise OSError("Folder isolation move failed.")
-        if os.name == "nt":
-            subprocess.run(
-                ["icacls", str(destination), "/inheritance:r", "/deny", "*S-1-1-0:(OI)(CI)(X)"],
-                check=False,
-                capture_output=True,
-                timeout=10,
-            )
+        _harden_isolated_acl(destination, folder=True)
         metadata = {
             "original": str(source),
             "quarantine_path": str(destination),
@@ -94,6 +122,8 @@ class QuarantineManager:
         source = Path(source).resolve()
         if not source.is_file():
             raise FileNotFoundError(source)
+        if _windows_encrypted_attributes(source):
+            raise ValueError("Encrypted EFS files cannot be isolated because encryption prevents secure containment.")
         if category is None:
             category = "apps" if source.suffix.casefold() in {".exe", ".dll", ".sys", ".com"} else "files"
         if category not in {"files", "apps", "folders"}:
@@ -115,13 +145,7 @@ class QuarantineManager:
             "category": category,
         }
         metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-        if os.name == "nt":
-            subprocess.run(
-                ["icacls", str(destination), "/inheritance:r", "/deny", "*S-1-1-0:(X)"],
-                check=False,
-                capture_output=True,
-                timeout=10,
-            )
+        _harden_isolated_acl(destination, folder=False)
         source.unlink()
         return metadata
 

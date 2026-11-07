@@ -82,6 +82,7 @@ from .auth import (
 )
 from .passkeys import PasskeyManager
 from .email_otp import EmailOtpManager
+from .process_inspection import capability_status
 from .firewall import FirewallController, FirewallWorkerError
 from .firewall_worker import block_rule_name, parse_public_ip, scan_block_rule_name
 
@@ -304,6 +305,7 @@ def status():
             "categories": sorted({tool["category"] for tool in TOOL_CATALOG}),
             "scope": "running process names, executable paths, and transient command-pattern checks",
         },
+        "process_inspection": capability_status(),
         "monitoring": {
             "running": bool(worker_thread and worker_thread.is_alive() and not worker_stop.is_set()),
             "poll_interval_seconds": config["poll_interval_seconds"],

@@ -11,6 +11,7 @@ from .integrity import EvidenceJournal
 from .rules import RuleEngine
 from .scanner import is_protected_system_path
 from .tool_catalog import identify_known_tool
+from .process_inspection import _read_process_memory, inspect_executable
 
 class DefenseEngine:
     def __init__(self, root: Path, config_path: Path):
@@ -154,6 +155,36 @@ class DefenseEngine:
         active_tool_processes = set()
         active_lolbin_processes = set()
         processes = snapshot_processes(config.get("excluded_processes", []))
+        if config.get("process_memory_inspection", True):
+            for process in processes[:256]:
+                pid = process.get("pid")
+                if not isinstance(pid, int):
+                    continue
+                memory = _read_process_memory(pid)
+                executable = inspect_executable(process.get("exe"))
+                suspicious_markers = sorted(set(memory.get("markers") or []) | set(executable.get("markers") or []))
+                if memory.get("available") or executable.get("available"):
+                    evidence = {
+                        "process_name": process.get("name"),
+                        "pid": pid,
+                        "memory_bytes_read": memory.get("bytes_read"),
+                        "memory_markers": memory.get("markers"),
+                        "executable": executable,
+                    }
+                    event = {
+                        "timestamp": utcnow(),
+                        "kind": "process_content_inspection",
+                        "severity": "high" if suspicious_markers else "medium",
+                        "source": f"Process memory (PID {pid})",
+                        "target": process.get("exe") or process.get("name") or "unknown",
+                        "confidence": 0.55 if suspicious_markers else None,
+                        "evidence": json.dumps(evidence, sort_keys=True),
+                        "response": "review_required_user_mode_inspection",
+                    }
+                    if suspicious_markers:
+                        self.db.add(event)
+                        self.journal.append(event)
+                        detected.append(event)
         detected.extend(self.check_isolation_access_attempts(processes))
         self.last_process_count = len(processes)
         tree_enabled = config.get("process_tree_monitoring", True)

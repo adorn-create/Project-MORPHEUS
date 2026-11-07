@@ -190,3 +190,43 @@ def test_lolbin_command_pattern_is_review_only_and_does_not_store_arguments(tmp_
     assert events[0]["response"] == "review_required_manual_approval"
     assert secret_argument not in events[0]["evidence"]
     assert secret_argument not in events[0]["target"]
+
+
+def test_process_content_inspection_reports_suspicious_executable_marker(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({
+        "process_memory_inspection": True,
+        "process_tree_monitoring": False,
+        "excluded_processes": [],
+    }), encoding="utf-8")
+    engine = DefenseEngine(tmp_path / "data", config_path)
+    monkeypatch.setattr(engine_module, "snapshot_processes", lambda excluded: [{
+        "pid": 42,
+        "name": "sample.exe",
+        "exe": "C:/sample.exe",
+        "connections": [],
+        "remote_connections": 0,
+    }])
+    monkeypatch.setattr(engine_module, "_read_process_memory", lambda pid: {
+        "available": True,
+        "bytes_read": 1024,
+        "markers": [],
+    })
+    monkeypatch.setattr(engine_module, "inspect_executable", lambda path: {
+        "available": True,
+        "size": 1024,
+        "scanned_bytes": 1024,
+        "sha256": "a" * 64,
+        "markers": ["mimikatz"],
+    })
+    monkeypatch.setattr(engine_module, "identify_known_tool", lambda *args: None)
+    monkeypatch.setattr(engine_module.psutil, "Process", lambda pid: object())
+    monkeypatch.setattr(engine_module, "executable_signals", lambda *args: ({}, None))
+    monkeypatch.setattr(engine.model, "score", lambda signals: (0.0, []))
+
+    events = engine.evaluate_once()
+
+    assert len(events) == 1
+    assert events[0]["kind"] == "process_content_inspection"
+    assert events[0]["severity"] == "high"
+    assert events[0]["response"] == "review_required_user_mode_inspection"
