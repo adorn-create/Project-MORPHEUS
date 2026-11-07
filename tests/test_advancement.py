@@ -149,6 +149,16 @@ def test_process_host_snapshot_uses_psutil_ppid_without_parent_pid_lookup(tmp_pa
     assert alerts[0][0] == "Process Relationship Review"
 
 
+def test_network_packet_review_ignores_non_packet_objects(tmp_path):
+    system = ComprehensiveReviewSystem(
+        db_name=tmp_path / "ledger.db",
+        canary_dir=tmp_path / "canaries",
+    )
+
+    system.process_network_packet(None)
+    system.process_network_packet(object())
+
+
 def test_dns_packet_review_alerts_on_high_entropy_label_without_storing_name(tmp_path):
     system = ComprehensiveReviewSystem(
         db_name=tmp_path / "ledger.db",

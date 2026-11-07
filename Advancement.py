@@ -274,8 +274,13 @@ class ComprehensiveReviewSystem:
                         self._reported_process_signals.add(identity)
 
                 if name in {"cmd.exe", "powershell.exe", "pwsh.exe", "whoami.exe"}:
-                    parent = proc.parent()
-                    if parent:
+                    parent_pid = info.get("ppid")
+                    if isinstance(parent_pid, int) and parent_pid > 0:
+                        parent = proc.parent()
+                    else:
+                        parent = proc.parent()
+                        parent_pid = parent.pid() if parent else None
+                    if parent and isinstance(parent_pid, int) and parent_pid > 0:
                         parent_name = (parent.name() or "").casefold()
                         if parent_name in {
                             "winword.exe",
@@ -284,9 +289,6 @@ class ComprehensiveReviewSystem:
                             "outlook.exe",
                             "acrord32.exe",
                         }:
-                            parent_pid = info.get("ppid")
-                            if not parent_pid:
-                                parent_pid = parent.pid()
                             identity = (pid, f"parent:{parent_pid}")
                             active_signals.add(identity)
                             if identity not in self._reported_process_signals:
@@ -324,14 +326,16 @@ class ComprehensiveReviewSystem:
 
     def process_network_packet(self, packet):
         try:
-            from scapy.all import ARP as ScapyARP, DNSQR as ScapyDNSQR
+            import scapy.all
         except (AttributeError, ImportError) as exc:
             raise RuntimeError("Scapy is required for DNS/ARP packet review.") from exc
 
         if packet is None:
             return
-        if packet.haslayer(ScapyDNSQR):
-            raw_name = packet[ScapyDNSQR].qname
+        if not callable(getattr(packet, "haslayer", None)):
+            return
+        if packet.haslayer(scapy.all.DNSQR):
+            raw_name = packet[scapy.all.DNSQR].qname
             if isinstance(raw_name, bytes):
                 qname = raw_name.decode("utf-8", errors="ignore").rstrip(".").lower()
             else:
@@ -359,8 +363,8 @@ class ComprehensiveReviewSystem:
                         "This heuristic can flag legitimate services.",
                     )
 
-        if packet.haslayer(ScapyARP):
-            arp = packet[ScapyARP]
+        if packet.haslayer(scapy.all.ARP):
+            arp = packet[scapy.all.ARP]
             try:
                 operation = int(arp.op)
             except (TypeError, ValueError):
