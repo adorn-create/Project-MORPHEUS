@@ -36,3 +36,18 @@ def test_isolated_acl_denies_authenticated_users_and_everyone(tmp_path, monkeypa
     assert "*S-1-1-0:(F)" in command
     assert "*S-1-5-18:(F)" in command
     assert "*S-1-5-32-544:(F)" in command
+
+
+def test_isolated_acl_failure_is_not_silently_accepted(tmp_path, monkeypatch):
+    monkeypatch.setattr(quarantine.os, "name", "nt")
+    monkeypatch.setattr(
+        quarantine.subprocess,
+        "run",
+        lambda command, **kwargs: type("Result", (), {"returncode": 1, "stderr": b"access denied"})(),
+    )
+
+    destination = tmp_path / "sample.quarantine"
+    destination.write_bytes(b"sample")
+
+    with pytest.raises(OSError, match="access denied"):
+        quarantine._harden_isolated_acl(destination, folder=False)

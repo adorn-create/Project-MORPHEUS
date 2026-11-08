@@ -1,6 +1,8 @@
 import ctypes
 import hashlib
 import os
+import math
+import struct
 from pathlib import Path
 
 import psutil
@@ -18,10 +20,83 @@ _MEMORY_MARKERS = (
     b"virtualallocex",
     b"writeprocessmemory",
     b"createremotethread",
-    b"powershell.exe",
     b"mimikatz",
     b"frombase64string",
+    b"invoke-mimikatz",
+    b"lsass.exe",
+    b"secretsdump",
+    b"procdump",
 )
+
+EXECUTABLE_PROTECTIONS = 0x10 | 0x20 | 0x40 | 0x80
+
+
+def _entropy(data: bytes) -> float:
+    if not data:
+        return 0.0
+    counts = [0] * 256
+    for value in data:
+        counts[value] += 1
+    length = len(data)
+    return -sum((count / length) * math.log2(count / length) for count in counts if count)
+
+
+def _inspect_pe(path: Path, size: int) -> dict:
+    findings = {"is_pe": False, "sections": [], "high_entropy_sections": [], "rwx_sections": [], "suspicious": []}
+    try:
+        with path.open("rb") as stream:
+            header = stream.read(4096)
+            if len(header) < 64 or header[:2] != b"MZ":
+                return findings
+            pe_offset = struct.unpack_from("<I", header, 0x3C)[0]
+            stream.seek(pe_offset)
+            pe_signature = stream.read(4)
+            if pe_signature != b"PE\0\0":
+                return findings
+            if pe_offset + 24 > size:
+                return findings
+            stream.seek(pe_offset + 4)
+            coff = stream.read(20)
+            if len(coff) < 20:
+                return findings
+            machine, section_count, _, _, _, optional_size, characteristics = struct.unpack_from("<HHIIIHH", coff)
+            findings["is_pe"] = True
+            findings["machine"] = hex(machine)
+            findings["characteristics"] = hex(characteristics)
+            stream.seek(pe_offset + 24 + optional_size)
+            for index in range(min(section_count, 96)):
+                raw_header = stream.read(40)
+                if len(raw_header) < 40:
+                    break
+                name = raw_header[:8].split(b"\0", 1)[0].decode("ascii", errors="replace")
+                virtual_address = struct.unpack_from("<I", raw_header, 12)[0]
+                raw_size = struct.unpack_from("<I", raw_header, 16)[0]
+                raw_offset = struct.unpack_from("<I", raw_header, 20)[0]
+                flags = struct.unpack_from("<I", raw_header, 36)[0]
+                executable = bool(flags & 0x20000000)
+                writable = bool(flags & 0x80000000)
+                sample_size = min(raw_size, 1024 * 1024)
+                stream.seek(raw_offset)
+                section_data = stream.read(sample_size)
+                entropy = _entropy(section_data)
+                section = {
+                    "name": name or f".section{index}",
+                    "virtual_address": hex(virtual_address),
+                    "raw_size": raw_size,
+                    "entropy": round(entropy, 3),
+                    "executable": executable,
+                    "writable": writable,
+                }
+                findings["sections"].append(section)
+                if entropy >= 7.2 and len(section_data) >= 1024:
+                    findings["high_entropy_sections"].append(section["name"])
+                if executable and writable:
+                    findings["rwx_sections"].append(section["name"])
+            if findings["rwx_sections"]:
+                findings["suspicious"].append("writable_executable_sections")
+            return findings
+    except (OSError, ValueError, struct.error):
+        return findings
 
 
 class MEMORY_BASIC_INFORMATION(ctypes.Structure):
@@ -80,7 +155,7 @@ def _read_process_memory(pid: int, markers=_MEMORY_MARKERS) -> dict:
                 address += mbi.RegionSize or 0x1000
                 continue
 
-            executable_pages = executable_pages or bool(mbi.Protect & 0xF0)
+            executable_pages = executable_pages or bool(mbi.Protect & EXECUTABLE_PROTECTIONS)
             remaining = MAX_MEMORY_BYTES_PER_PROCESS - read_bytes
             region_size = min(mbi.RegionSize, remaining)
             offset = 0
@@ -124,6 +199,7 @@ def inspect_executable(path: str | None, max_bytes: int = 32 * 1024 * 1024) -> d
         digest = hashlib.sha256()
         marker_matches = set()
         scanned = 0
+        pe_findings = _inspect_pe(executable, size)
         with executable.open("rb") as stream:
             while scanned < size:
                 chunk = stream.read(min(1024 * 1024, size - scanned))
@@ -139,7 +215,7 @@ def inspect_executable(path: str | None, max_bytes: int = 32 * 1024 * 1024) -> d
             "scanned_bytes": scanned,
             "sha256": digest.hexdigest(),
             "markers": sorted(marker_matches),
+            "pe": pe_findings,
         }
     except (OSError, ValueError, psutil.AccessDenied):
         return {"available": False, "reason": "executable contents access denied or unavailable"}
-

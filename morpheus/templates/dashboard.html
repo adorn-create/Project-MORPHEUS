@@ -356,6 +356,11 @@
           <label for="processTreeMonitoring">Show which apps started other apps</label>
         </div>
         <div class="setting-toggle">
+          <input id="processMemoryInspection" type="checkbox" {% if config.get('process_memory_inspection', true) %}checked{% endif %}>
+          <label for="processMemoryInspection">Inspect process memory and executable contents</label>
+        </div>
+        <p class="password-state">Windows token, PPL, protected-process, and privilege limits may prevent access to some memory or executables.</p>
+        <div class="setting-toggle">
           <input id="canaryMonitoring" type="checkbox" {% if config.get('canary_monitoring', false) %}checked{% endif %}>
           <label for="canaryMonitoring">Watch harmless Morpheus decoy files for unexpected changes</label>
         </div>
@@ -1930,6 +1935,13 @@ async function chooseDownloadFolder() {
   }
 }
 browseDownloadFolderButton.addEventListener('click', chooseDownloadFolder);
+document.getElementById('processMemoryInspection').addEventListener('change', event => {
+  if (event.target.checked && !window.confirm('Morpheus will read accessible process memory and executable files. Protected processes, PPL processes, and Windows privileges may block access; findings are heuristics and not a guarantee. Continue?')) {
+    event.target.checked = false;
+    return;
+  }
+  return updateConfigFromToggle(event.target, enabled => ({ process_memory_inspection: enabled }), 'Could not update process inspection');
+});
 dnsEntropyMonitoring.addEventListener('change', event => {
   if (event.target.checked && !window.confirm('Morpheus will periodically read the Windows DNS client cache and store only review alerts for unusually random names. This does not capture packets or block DNS. Continue?')) {
     event.target.checked = false;

@@ -31,7 +31,13 @@ def _harden_isolated_acl(destination: Path, folder: bool) -> None:
         "/deny", f"*S-1-5-11:{rights}",
         "/deny", f"*S-1-1-0:{rights}",
     ]
-    subprocess.run(command, check=False, capture_output=True, timeout=10)
+    try:
+        result = subprocess.run(command, check=False, capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise OSError(f"Unable to enforce isolation ACLs: {exc}") from exc
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise OSError(detail or "Windows denied the isolation ACL operation")
 
 class QuarantineManager:
     def __init__(self, root: Path):
@@ -106,7 +112,11 @@ class QuarantineManager:
         shutil.move(str(source), str(destination))
         if not destination.is_dir():
             raise OSError("Folder isolation move failed.")
-        _harden_isolated_acl(destination, folder=True)
+        try:
+            _harden_isolated_acl(destination, folder=True)
+        except OSError:
+            shutil.move(str(destination), str(source))
+            raise
         metadata = {
             "original": str(source),
             "quarantine_path": str(destination),
@@ -137,6 +147,11 @@ class QuarantineManager:
         if self._sha256(destination) != sha256:
             destination.unlink(missing_ok=True)
             raise OSError("Quarantine copy failed integrity check")
+        try:
+            _harden_isolated_acl(destination, folder=False)
+        except OSError:
+            destination.unlink(missing_ok=True)
+            raise
         metadata = {
             "original": str(source),
             "quarantine_path": str(destination),
@@ -145,7 +160,6 @@ class QuarantineManager:
             "category": category,
         }
         metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-        _harden_isolated_acl(destination, folder=False)
         source.unlink()
         return metadata
 

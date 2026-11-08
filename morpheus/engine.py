@@ -163,6 +163,10 @@ class DefenseEngine:
                 memory = _read_process_memory(pid)
                 executable = inspect_executable(process.get("exe"))
                 suspicious_markers = sorted(set(memory.get("markers") or []) | set(executable.get("markers") or []))
+                pe_findings = executable.get("pe") or {}
+                pe_suspicious = pe_findings.get("suspicious") or []
+                if pe_suspicious:
+                    suspicious_markers = sorted(set(suspicious_markers) | set(pe_suspicious))
                 if memory.get("available") or executable.get("available"):
                     evidence = {
                         "process_name": process.get("name"),
