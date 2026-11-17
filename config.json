@@ -11,7 +11,7 @@
   "canary_monitoring": false,
   "download_confidence_threshold": 0.6,
   "high_confidence_threshold": 0.95,
-  "scan_max_file_bytes": 536870912,
+  "scan_max_file_bytes": 314572800,
   "scan_max_folder_bytes": 5368709120,
   "scan_max_folder_files": 5000,
   "scan_timeout_seconds": 180,

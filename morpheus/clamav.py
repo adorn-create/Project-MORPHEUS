@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from .scanner import ProtectedSystemPathError, is_protected_system_path
+from .scanner import MAX_SCAN_FILE_BYTES, ProtectedSystemPathError, is_protected_system_path
 
 STATUS_CACHE_SECONDS = 60
 SCAN_TIMEOUT_SECONDS = 180
@@ -244,7 +244,8 @@ class ClamAVScanner:
             "status": status,
         }
 
-    def scan_file(self, path: Path, *, max_bytes: int = 512 * 1024 * 1024) -> dict:
+    def scan_file(self, path: Path, *, max_bytes: int = MAX_SCAN_FILE_BYTES) -> dict:
+        max_bytes = min(max_bytes, MAX_SCAN_FILE_BYTES)
         target = Path(path).expanduser()
         try:
             resolved = target.resolve(strict=True)

@@ -53,6 +53,7 @@ def test_dashboard_renders_background_monitoring_and_folder_picker():
     assert 'id="zipPassword"' in response.text
     assert 'id="zipScanButton"' in response.text
     assert 'id="sevenZipScanButton"' in response.text
+    assert "File scans are limited to 300 MiB per file." in response.text
     assert "small built-in exact test signature" in response.text
     assert "no Ollama" in response.text
     assert "not a general-purpose generative AI" in response.text
@@ -68,6 +69,29 @@ def test_scan_endpoint_returns_detection_results(monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == {"detected": detections, "processes_checked": 27}
+
+
+def test_file_scan_endpoint_caps_legacy_file_size_configuration(monkeypatch):
+    received = {}
+    monkeypatch.setattr(
+        main.engine,
+        "config",
+        lambda: {"scan_max_file_bytes": 512 * 1024 * 1024},
+    )
+    monkeypatch.setattr(
+        main.scanner,
+        "scan_file",
+        lambda path, **kwargs: received.update(kwargs) or {"path": str(path)},
+    )
+
+    response = TestClient(main.app).post(
+        "/api/scan-file",
+        json={"path": "sample.bin"},
+    )
+
+    assert response.status_code == 200
+    assert received["max_bytes"] == 300 * 1024 * 1024
+
 
 def test_clamav_scan_endpoint_records_detection_for_review(tmp_path, monkeypatch):
     target = tmp_path / "sample.exe"

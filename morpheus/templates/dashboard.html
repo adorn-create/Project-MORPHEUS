@@ -314,7 +314,7 @@
           <button id="reviewCodeButton" type="button">Review source code offline</button>
           <input id="folderInput" type="file" webkitdirectory multiple hidden aria-label="Choose a folder to scan">
         </div>
-        <p class="subtle">Password-based scanning supports classic/AES-encrypted ZIP and 7z archives. Enter the owner's password; no guessing is used. Entries are scanned locally and never executed. 7z contents are held in bounded memory (512 MiB maximum); other encrypted formats are not supported.</p>
+        <p class="subtle">File scans are limited to 300 MiB per file. Password-based scanning supports classic/AES-encrypted ZIP and 7z archives. Enter the owner's password; no guessing is used. Entries are scanned locally and never executed. 7z contents are held in bounded memory (300 MiB maximum); other encrypted formats are not supported.</p>
         <p class="password-state" id="clamavUpdateStatus" role="status" aria-live="polite">Download ClamAV's initial signature database after installation. Updates need an internet connection and a passkey approval.</p>
         <p class="subtle">Morpheus checks supported code for common security mistakes entirely on this computer. It does not need or send code to an AI service. These rules can miss problems and are not an antivirus scan.</p>
         <div class="result" id="scanResult" role="status" aria-live="polite">Enter a file path or choose a folder to analyze.</div>

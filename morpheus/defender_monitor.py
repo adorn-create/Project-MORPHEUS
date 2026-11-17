@@ -7,6 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .collector import utcnow
+from .scanner import MAX_SCAN_FILE_BYTES
 
 POLL_INTERVAL_SECONDS = 60
 STALE_SIGNATURE_DAYS = 7
@@ -35,9 +36,10 @@ def find_defender_command() -> str | None:
     return None
 
 
-def scan_file_with_defender(path: Path, *, max_bytes: int = 512 * 1024 * 1024) -> dict:
+def scan_file_with_defender(path: Path, *, max_bytes: int = MAX_SCAN_FILE_BYTES) -> dict:
     if os.name != "nt":
         raise RuntimeError("Microsoft Defender command-line scanning is available only on Windows.")
+    max_bytes = min(max_bytes, MAX_SCAN_FILE_BYTES)
     resolved = Path(path).expanduser().resolve(strict=True)
     if not resolved.is_file():
         raise ValueError("Microsoft Defender scan requires a single existing file.")

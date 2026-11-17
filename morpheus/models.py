@@ -1,5 +1,6 @@
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
+from .scanner import MAX_SCAN_FILE_BYTES
 
 class ConfigUpdate(BaseModel):
     automatic_high_confidence: bool | None = None
@@ -16,7 +17,7 @@ class ConfigUpdate(BaseModel):
     download_confidence_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     high_confidence_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     poll_interval_seconds: float | None = Field(default=None, ge=1.0, le=3600.0)
-    scan_max_file_bytes: int | None = Field(default=None, ge=1024, le=10_737_418_240)
+    scan_max_file_bytes: int | None = Field(default=None, ge=1024, le=MAX_SCAN_FILE_BYTES)
     scan_max_folder_bytes: int | None = Field(default=None, ge=1024, le=109_951_162_7776)
     scan_max_folder_files: int | None = Field(default=None, ge=1, le=100000)
     scan_timeout_seconds: float | None = Field(default=None, ge=1.0, le=3600.0)

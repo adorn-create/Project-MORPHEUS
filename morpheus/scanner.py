@@ -23,7 +23,8 @@ from py7zr.exceptions import (
 SCAN_CHUNK_SIZE = 1024 * 1024
 MAX_FOLDER_SCAN_FILES = 5000
 MAX_FOLDER_SCAN_DIRECTORIES = 20_000
-DEFAULT_MAX_FILE_BYTES = 512 * 1024 * 1024
+MAX_SCAN_FILE_BYTES = 300 * 1024 * 1024
+DEFAULT_MAX_FILE_BYTES = MAX_SCAN_FILE_BYTES
 DEFAULT_MAX_FOLDER_BYTES = 5 * 1024 * 1024 * 1024
 PROTECTED_DIRECTORY_NAMES = {
     "$recycle.bin", "$winreagent", "boot", "config.msi", "efi",
@@ -196,6 +197,7 @@ class StaticScanner:
         timeout_seconds: float = 180.0,
         is_cancelled=None,
     ) -> dict:
+        max_bytes = min(max_bytes, MAX_SCAN_FILE_BYTES)
         path = Path(path)
         if is_protected_system_path(path, protected_roots=protected_roots):
             raise ProtectedSystemPathError("Windows system and protected application files are excluded from file scans.")
@@ -226,6 +228,8 @@ class StaticScanner:
         timeout_seconds: float = 180.0,
         is_cancelled=None,
     ) -> dict:
+        max_archive_bytes = min(max_archive_bytes, MAX_SCAN_FILE_BYTES)
+        max_file_bytes = min(max_file_bytes, MAX_SCAN_FILE_BYTES)
         target = Path(path).expanduser()
         try:
             resolved = target.resolve(strict=True)
@@ -322,6 +326,8 @@ class StaticScanner:
         timeout_seconds: float = 180.0,
         is_cancelled=None,
     ) -> dict:
+        max_archive_bytes = min(max_archive_bytes, MAX_SCAN_FILE_BYTES)
+        max_file_bytes = min(max_file_bytes, MAX_SCAN_FILE_BYTES)
         target = Path(path).expanduser()
         try:
             resolved = target.resolve(strict=True)
@@ -432,6 +438,7 @@ class StaticScanner:
         timeout_seconds: float = 180.0,
         is_cancelled=None,
     ) -> dict:
+        max_bytes = min(max_bytes, MAX_SCAN_FILE_BYTES)
         if has_protected_folder_name(name):
             raise ProtectedSystemPathError("Windows system and protected application files are excluded from file scans.")
         digest = hashlib.sha256()
@@ -509,6 +516,7 @@ class StaticScanner:
         timeout_seconds: float = 180.0,
         is_cancelled=None,
     ) -> dict:
+        max_file_bytes = min(max_file_bytes, MAX_SCAN_FILE_BYTES)
         if max_files is None:
             max_files = MAX_FOLDER_SCAN_FILES
         root = Path(path).resolve()

@@ -150,6 +150,28 @@ def test_static_scanner_enforces_configurable_file_limit(tmp_path):
         raise AssertionError("The configurable file limit was not enforced")
 
 
+def test_static_scanner_never_exceeds_global_file_limit(monkeypatch):
+    class OversizedChunkStream:
+        def __init__(self):
+            self.reads = 0
+
+        def read(self, size):
+            self.reads += 1
+            return b"12345" if self.reads == 1 else b""
+
+    monkeypatch.setattr("morpheus.scanner.MAX_SCAN_FILE_BYTES", 4)
+    try:
+        StaticScanner().scan_stream(
+            OversizedChunkStream(),
+            "large.bin",
+            max_bytes=100,
+        )
+    except ValueError as exc:
+        assert "configured scan limit of 4 bytes" in str(exc)
+    else:
+        raise AssertionError("The global file-size limit was not enforced")
+
+
 def test_static_scanner_supports_cancelled_stream():
     class OneChunkStream:
         def read(self, size):

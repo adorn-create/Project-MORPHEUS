@@ -42,7 +42,12 @@ from .engine import DefenseEngine
 from .downloads import MAX_MONITORED_FILES, DownloadMonitor
 from .code_review import CodeReview
 from .local_assistant import OfflineAssistant
-from .scanner import ProtectedSystemPathError, StaticScanner, is_protected_system_path
+from .scanner import (
+    MAX_SCAN_FILE_BYTES,
+    ProtectedSystemPathError,
+    StaticScanner,
+    is_protected_system_path,
+)
 from .sysmon import SysmonStatus
 from .timeline import AttackTimeline
 from .quarantine import QuarantineManager
@@ -98,6 +103,12 @@ if not CONFIG_PATH.exists():
     shutil.copyfile(bundled_config, CONFIG_PATH)
 engine = DefenseEngine(DATA_ROOT, CONFIG_PATH)
 scanner = StaticScanner()
+
+
+def _configured_scan_max_file_bytes(config: dict) -> int:
+    return min(int(config.get("scan_max_file_bytes", MAX_SCAN_FILE_BYTES)), MAX_SCAN_FILE_BYTES)
+
+
 clamav_binary_directory = os.environ.get("MORPHEUS_CLAMAV_DIR") or None
 clamav_scanner = ClamAVScanner(
     binary_directory=clamav_binary_directory,
@@ -315,7 +326,7 @@ def status():
             "downloads_enabled": config.get("download_monitoring", False),
             "download_directory": config.get("download_directory") or str(Path.home() / "Downloads"),
             "monitored_file_limit": MAX_MONITORED_FILES,
-            "scan_max_file_bytes": int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+            "scan_max_file_bytes": _configured_scan_max_file_bytes(config),
             "scan_max_folder_bytes": int(config.get("scan_max_folder_bytes", 5 * 1024 * 1024 * 1024)),
             "scan_max_folder_files": int(config.get("scan_max_folder_files", 5000)),
             "scan_timeout_seconds": float(config.get("scan_timeout_seconds", 180)),
@@ -495,7 +506,7 @@ def scan_file(payload: ScanFileRequest):
         config = engine.config()
         return scanner.scan_file(
             Path(path),
-            max_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+            max_bytes=_configured_scan_max_file_bytes(config),
             timeout_seconds=float(config.get("scan_timeout_seconds", 180)),
             is_cancelled=scan_cancel_event.is_set,
         )
@@ -514,8 +525,8 @@ def scan_zip(payload: PasswordArchiveScanRequest):
         return scanner.scan_zip(
             Path(payload.path),
             payload.password,
-            max_archive_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
-            max_file_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+            max_archive_bytes=_configured_scan_max_file_bytes(config),
+            max_file_bytes=_configured_scan_max_file_bytes(config),
             max_total_bytes=int(config.get("scan_max_folder_bytes", 5 * 1024 * 1024 * 1024)),
             max_files=int(config.get("scan_max_folder_files", 5000)),
             timeout_seconds=float(config.get("scan_timeout_seconds", 180)),
@@ -542,8 +553,8 @@ def scan_7z(payload: PasswordArchiveScanRequest):
         return scanner.scan_7z(
             Path(payload.path),
             payload.password,
-            max_archive_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
-            max_file_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+            max_archive_bytes=_configured_scan_max_file_bytes(config),
+            max_file_bytes=_configured_scan_max_file_bytes(config),
             max_total_bytes=int(config.get("scan_max_folder_bytes", 5 * 1024 * 1024 * 1024)),
             max_files=int(config.get("scan_max_folder_files", 5000)),
             timeout_seconds=float(config.get("scan_timeout_seconds", 180)),
@@ -569,7 +580,7 @@ def scan_file_with_antivirus(payload: AntivirusScanRequest):
         config = engine.config()
         result = clamav_scanner.scan_file(
             Path(payload.path),
-            max_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+            max_bytes=_configured_scan_max_file_bytes(config),
         )
     except ProtectedSystemPathError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -616,7 +627,7 @@ def scan_file_with_windows_defender(payload: AntivirusScanRequest):
         config = engine.config()
         return scan_file_with_defender(
             Path(payload.path),
-            max_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+            max_bytes=_configured_scan_max_file_bytes(config),
         )
     except ProtectedSystemPathError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -645,7 +656,7 @@ def scan_folder(payload: ScanFolderRequest):
         config = engine.config()
         return scanner.scan_folder(
             Path(payload.path),
-            max_file_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+            max_file_bytes=_configured_scan_max_file_bytes(config),
             max_folder_bytes=int(config.get("scan_max_folder_bytes", 5 * 1024 * 1024 * 1024)),
             max_files=int(config.get("scan_max_folder_files", 5000)),
             timeout_seconds=float(config.get("scan_timeout_seconds", 180)),
@@ -689,7 +700,7 @@ def scan_upload(file: UploadFile = File(...)):
         return scanner.scan_stream(
             file.file,
             name,
-            max_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+            max_bytes=_configured_scan_max_file_bytes(config),
             timeout_seconds=float(config.get("scan_timeout_seconds", 180)),
             is_cancelled=scan_cancel_event.is_set,
         )

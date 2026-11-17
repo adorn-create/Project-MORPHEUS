@@ -1,7 +1,9 @@
 import json
+import pytest
 from morpheus.integrity import EvidenceJournal
 from morpheus.rules import RuleEngine
 from morpheus.models import ConfigUpdate
+from morpheus.scanner import MAX_SCAN_FILE_BYTES
 
 def test_journal_integrity(tmp_path):
     journal = EvidenceJournal(tmp_path)
@@ -39,3 +41,9 @@ def test_rule_engine_maps_powershell():
 def test_config_validation_bounds():
     config = ConfigUpdate(high_confidence_threshold=0.95, poll_interval_seconds=5)
     assert config.high_confidence_threshold == 0.95
+
+
+def test_config_validation_caps_file_scan_size():
+    assert ConfigUpdate(scan_max_file_bytes=MAX_SCAN_FILE_BYTES).scan_max_file_bytes == MAX_SCAN_FILE_BYTES
+    with pytest.raises(ValueError):
+        ConfigUpdate(scan_max_file_bytes=MAX_SCAN_FILE_BYTES + 1)
