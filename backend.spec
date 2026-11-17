@@ -23,6 +23,8 @@ for package in (
     "watchdog",
     "argon2",
     "webauthn",
+    "pyzipper",
+    "py7zr",
     "pydantic",
     "pydantic_core",
 ):

@@ -26,6 +26,12 @@ class ConfigUpdate(BaseModel):
 class ScanFileRequest(BaseModel):
     path: str = Field(min_length=1, max_length=32768)
 
+class PasswordArchiveScanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: str = Field(min_length=1, max_length=32768)
+    password: str = Field(default="", max_length=1024)
+
 class AntivirusScanRequest(BaseModel):
     path: str = Field(min_length=1, max_length=32768)
 

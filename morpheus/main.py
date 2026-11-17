@@ -69,6 +69,7 @@ from .models import (
     SettingsPasswordRequest,
     OwnerEmailRequest,
     OwnerEmailOtpRequest,
+    PasswordArchiveScanRequest,
 )
 from .tool_catalog import TOOL_CATALOG
 from .expansion import DnsEntropyMonitor, PowerShellLogMonitor
@@ -504,6 +505,62 @@ def scan_file(payload: ScanFileRequest):
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except (FileNotFoundError, OSError, PermissionError) as exc:
         return JSONResponse({"error": str(exc)}, status_code=404)
+
+@app.post("/api/scan-zip")
+def scan_zip(payload: PasswordArchiveScanRequest):
+    try:
+        scan_cancel_event.clear()
+        config = engine.config()
+        return scanner.scan_zip(
+            Path(payload.path),
+            payload.password,
+            max_archive_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+            max_file_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+            max_total_bytes=int(config.get("scan_max_folder_bytes", 5 * 1024 * 1024 * 1024)),
+            max_files=int(config.get("scan_max_folder_files", 5000)),
+            timeout_seconds=float(config.get("scan_timeout_seconds", 180)),
+            is_cancelled=scan_cancel_event.is_set,
+        )
+    except ProtectedSystemPathError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TimeoutError as exc:
+        raise HTTPException(status_code=408, detail=str(exc)) from exc
+    except InterruptedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=422, detail=f"Could not read the ZIP archive: {exc}") from exc
+
+@app.post("/api/scan-7z")
+def scan_7z(payload: PasswordArchiveScanRequest):
+    try:
+        scan_cancel_event.clear()
+        config = engine.config()
+        return scanner.scan_7z(
+            Path(payload.path),
+            payload.password,
+            max_archive_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+            max_file_bytes=int(config.get("scan_max_file_bytes", 512 * 1024 * 1024)),
+            max_total_bytes=int(config.get("scan_max_folder_bytes", 5 * 1024 * 1024 * 1024)),
+            max_files=int(config.get("scan_max_folder_files", 5000)),
+            timeout_seconds=float(config.get("scan_timeout_seconds", 180)),
+            is_cancelled=scan_cancel_event.is_set,
+        )
+    except ProtectedSystemPathError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TimeoutError as exc:
+        raise HTTPException(status_code=408, detail=str(exc)) from exc
+    except InterruptedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=422, detail=f"Could not read the 7z archive: {exc}") from exc
 
 @app.post("/api/scan-antivirus")
 def scan_file_with_antivirus(payload: AntivirusScanRequest):

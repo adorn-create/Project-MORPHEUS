@@ -7,6 +7,8 @@ python-multipart<1,>=0.0.18
 watchdog<7,>=6
 argon2-cffi<26,>=23.1
 webauthn<3,>=2.7
+pyzipper<1,>=0.4
+py7zr<2,>=1
 
 [build]
 pyinstaller<7,>=6.19

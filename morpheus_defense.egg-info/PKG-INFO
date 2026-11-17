@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: morpheus-defense
-Version: 0.1.4
+Version: 0.2.0
 Requires-Python: >=3.12
 Requires-Dist: fastapi<1,>=0.115
 Requires-Dist: uvicorn[standard]<1,>=0.32
@@ -11,6 +11,8 @@ Requires-Dist: python-multipart<1,>=0.0.18
 Requires-Dist: watchdog<7,>=6
 Requires-Dist: argon2-cffi<26,>=23.1
 Requires-Dist: webauthn<3,>=2.7
+Requires-Dist: pyzipper<1,>=0.4
+Requires-Dist: py7zr<2,>=1
 Provides-Extra: network-monitoring
 Requires-Dist: scapy<3,>=2.6; extra == "network-monitoring"
 Provides-Extra: build

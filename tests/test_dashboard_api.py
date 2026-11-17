@@ -50,6 +50,9 @@ def test_dashboard_renders_background_monitoring_and_folder_picker():
     assert 'id="defenderHealthState"' in response.text
     assert 'id="clamavHealthState"' in response.text
     assert 'id="clamavScanButton"' in response.text
+    assert 'id="zipPassword"' in response.text
+    assert 'id="zipScanButton"' in response.text
+    assert 'id="sevenZipScanButton"' in response.text
     assert "small built-in exact test signature" in response.text
     assert "no Ollama" in response.text
     assert "not a general-purpose generative AI" in response.text
@@ -95,6 +98,62 @@ def test_clamav_scan_endpoint_records_detection_for_review(tmp_path, monkeypatch
     assert "Win.Test.Detection" in recorded[0]["evidence"]
     assert len(recorded) == 2
 
+
+def test_zip_scan_endpoint_uses_owner_password_without_returning_it(tmp_path, monkeypatch):
+    target = tmp_path / "sample.zip"
+    target.write_bytes(b"archive")
+    received = {}
+    result = {
+        "path": str(target),
+        "entries_scanned": 1,
+        "encrypted_entries": 1,
+        "results": [],
+        "message": "Scanned locally.",
+    }
+
+    def scan_zip(path, password, **kwargs):
+        received["path"] = path
+        received["password"] = password
+        return result
+
+    monkeypatch.setattr(main.scanner, "scan_zip", scan_zip)
+    response = TestClient(main.app).post(
+        "/api/scan-zip",
+        json={"path": str(target), "password": "owner-secret"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == result
+    assert received == {"path": target, "password": "owner-secret"}
+    assert "owner-secret" not in response.text
+
+def test_7z_scan_endpoint_uses_owner_password_without_returning_it(tmp_path, monkeypatch):
+    target = tmp_path / "sample.7z"
+    target.write_bytes(b"archive")
+    received = {}
+    result = {
+        "path": str(target),
+        "entries_scanned": 1,
+        "encrypted_entries": 1,
+        "results": [],
+        "message": "Scanned locally.",
+    }
+
+    def scan_7z(path, password, **kwargs):
+        received["path"] = path
+        received["password"] = password
+        return result
+
+    monkeypatch.setattr(main.scanner, "scan_7z", scan_7z)
+    response = TestClient(main.app).post(
+        "/api/scan-7z",
+        json={"path": str(target), "password": "owner-secret"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == result
+    assert received == {"path": target, "password": "owner-secret"}
+    assert "owner-secret" not in response.text
 
 def test_clamav_scan_endpoint_reports_scanner_unavailable(tmp_path, monkeypatch):
     target = tmp_path / "sample.exe"

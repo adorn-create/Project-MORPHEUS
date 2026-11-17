@@ -10,6 +10,7 @@ morpheus/database.py
 morpheus/defender_monitor.py
 morpheus/detector.py
 morpheus/downloads.py
+morpheus/email_otp.py
 morpheus/engine.py
 morpheus/expansion.py
 morpheus/filesystem_monitor.py
@@ -19,10 +20,11 @@ morpheus/integrity.py
 morpheus/local_assistant.py
 morpheus/main.py
 morpheus/models.py
-morpheus/passkeys.py
 morpheus/network_guard.py
 morpheus/notifications.py
+morpheus/passkeys.py
 morpheus/persistence.py
+morpheus/process_inspection.py
 morpheus/quarantine.py
 morpheus/risk.py
 morpheus/rules.py
@@ -61,5 +63,7 @@ tests/test_local_assistant.py
 tests/test_network_guard.py
 tests/test_passkeys.py
 tests/test_persistence.py
+tests/test_process_inspection.py
+tests/test_quarantine_security.py
 tests/test_scanner.py
 tests/test_tool_catalog.py

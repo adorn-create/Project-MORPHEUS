@@ -62,6 +62,10 @@ File and download analysis
 - Analyze a selected file or browse a folder using local static-analysis
   heuristics, including SHA-256 and entropy. Results are shown as plain-language
   notes; a heuristic score is not a probability or malware verdict.
+- Scan classic/AES-encrypted ZIP and 7z entries locally when the owner supplies
+  the password. ZIP entries are streamed; 7z entries stay in bounded memory.
+  Decrypted files are not written to disk or executed. Password guessing and
+  other encrypted formats are not supported.
 - Run Morpheus's deterministic source-code rules entirely on this computer;
   no external model service is contacted.
 - Findings include reviewer, severity, line number, explanation, and suggested

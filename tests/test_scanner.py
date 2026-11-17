@@ -1,3 +1,10 @@
+import io
+import zipfile
+from types import SimpleNamespace
+
+import py7zr
+import pyzipper
+
 from morpheus.scanner import SCAN_CHUNK_SIZE, StaticScanner
 from morpheus.scanner import ProtectedSystemPathError
 
@@ -143,7 +150,7 @@ def test_static_scanner_enforces_configurable_file_limit(tmp_path):
         raise AssertionError("The configurable file limit was not enforced")
 
 
-def test_static_scanner_supports_cancelled_stream(tmp_path):
+def test_static_scanner_supports_cancelled_stream():
     class OneChunkStream:
         def read(self, size):
             return b"x" * size
@@ -159,6 +166,147 @@ def test_static_scanner_supports_cancelled_stream(tmp_path):
     else:
         raise AssertionError("Cancellation was not propagated")
 
+def test_zip_scan_streams_plaintext_entries_without_extracting(tmp_path):
+    archive_path = tmp_path / "sample.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("payload.txt", b"powershell.exe")
+
+    result = StaticScanner().scan_zip(archive_path, "")
+
+    assert result["entries_scanned"] == 1
+    assert result["encrypted_entries"] == 0
+    assert "suspicious_native_marker" in result["results"][0]["reasons"]
+    assert not (tmp_path / "payload.txt").exists()
+    assert "not saved or executed" in result["message"]
+
+def test_zip_scan_requires_owner_password_and_rejects_bad_password(tmp_path, monkeypatch):
+    archive_path = tmp_path / "encrypted.zip"
+    archive_path.write_bytes(b"synthetic test archive")
+    member = SimpleNamespace(
+        filename="payload.txt",
+        file_size=6,
+        flag_bits=0x1,
+        compress_type=0,
+        is_dir=lambda: False,
+    )
+
+    class FakeArchive:
+        def __init__(self, path):
+            assert str(path).endswith(".zip")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return exc_type is None and exc_value is None and traceback is None
+
+        def infolist(self):
+            return [member]
+
+        def open(self, info, *, pwd):
+            assert info is member
+            if pwd != b"owner-secret":
+                raise RuntimeError("Bad password for file")
+            return io.BytesIO(b"sample")
+
+    monkeypatch.setattr("morpheus.scanner.pyzipper.AESZipFile", FakeArchive)
+    scanner = StaticScanner()
+
+    try:
+        scanner.scan_zip(archive_path, "")
+    except ValueError as exc:
+        assert "Enter the archive password" in str(exc)
+    else:
+        raise AssertionError("Encrypted entries must require an owner-supplied password")
+
+    try:
+        scanner.scan_zip(archive_path, "wrong")
+    except ValueError as exc:
+        assert "could not decrypt" in str(exc)
+    else:
+        raise AssertionError("An incorrect password must fail clearly")
+
+    result = scanner.scan_zip(archive_path, "owner-secret")
+    assert result["encrypted_entries"] == 1
+    assert result["entries_scanned"] == 1
+
+def test_zip_scan_enforces_uncompressed_entry_limit(tmp_path):
+    archive_path = tmp_path / "large-entry.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("payload.txt", b"12345")
+
+    try:
+        StaticScanner().scan_zip(archive_path, "", max_file_bytes=4)
+    except ValueError as exc:
+        assert "file limit" in str(exc)
+    else:
+        raise AssertionError("ZIP entry size limit was not enforced")
+
+def test_zip_scan_supports_aes_encrypted_archives(tmp_path):
+    archive_path = tmp_path / "aes.zip"
+    with pyzipper.AESZipFile(
+        str(archive_path),
+        "w",
+        compression=pyzipper.ZIP_DEFLATED,
+        encryption=pyzipper.WZ_AES,
+    ) as archive:
+        archive.setpassword(b"owner-secret")
+        archive.writestr("payload.txt", b"powershell.exe")
+
+    result = StaticScanner().scan_zip(archive_path, "owner-secret")
+
+    assert result["encrypted_entries"] == 1
+    assert "suspicious_native_marker" in result["results"][0]["reasons"]
+
+    try:
+        StaticScanner().scan_zip(archive_path, "wrong-password")
+    except ValueError as exc:
+        assert "could not decrypt" in str(exc)
+    else:
+        raise AssertionError("An incorrect ZIP password must fail clearly")
+
+def test_7z_scan_decrypts_into_bounded_memory_and_checks_entries(tmp_path):
+    source_directory = tmp_path / "source"
+    source_directory.mkdir()
+    source = source_directory / "payload.txt"
+    source.write_bytes(b"powershell.exe")
+    archive_path = tmp_path / "sample.7z"
+    with py7zr.SevenZipFile(archive_path, "w", password="owner-secret") as archive:
+        archive.write(source, arcname="payload.txt")
+
+    result = StaticScanner().scan_7z(archive_path, "owner-secret")
+
+    assert result["entries_scanned"] == 1
+    assert result["encrypted_entries"] == 1
+    assert "suspicious_native_marker" in result["results"][0]["reasons"]
+    assert "not written to disk" in result["message"]
+    assert not (tmp_path / "payload.txt").exists()
+
+    try:
+        StaticScanner().scan_7z(archive_path, "wrong-password")
+    except ValueError as exc:
+        assert "password is incorrect" in str(exc)
+    else:
+        raise AssertionError("An incorrect 7z password must fail clearly")
+
+def test_7z_scan_handles_unencrypted_entries_and_enforces_memory_limit(tmp_path):
+    source = tmp_path / "plain.txt"
+    source.write_bytes(b"sample-data")
+    archive_path = tmp_path / "plain.7z"
+    with py7zr.SevenZipFile(archive_path, "w") as archive:
+        archive.write(source, arcname="plain.txt")
+
+    result = StaticScanner().scan_7z(archive_path, "")
+
+    assert result["entries_scanned"] == 1
+    assert result["encrypted_entries"] == 0
+
+    try:
+        StaticScanner().scan_7z(archive_path, "", max_total_bytes=4)
+    except ValueError as exc:
+        assert "bounded in-memory" in str(exc)
+    else:
+        raise AssertionError("7z expanded-size limits must be enforced")
 
 def test_folder_scan_reports_cancellation_instead_of_a_per_file_failure(tmp_path, monkeypatch):
     sample = tmp_path / "sample.txt"

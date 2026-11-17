@@ -1,11 +1,24 @@
 import hashlib
 import io
 import json
+import lzma
 import math
 import os
+import threading
 import time
 from collections import Counter
 from pathlib import Path
+
+import py7zr
+import pyzipper
+from py7zr.exceptions import (
+    Bad7zFile,
+    CrcError,
+    DecompressionBombError,
+    DecompressionError,
+    PasswordRequired,
+    UnsupportedCompressionMethodError,
+)
 
 SCAN_CHUNK_SIZE = 1024 * 1024
 MAX_FOLDER_SCAN_FILES = 5000
@@ -81,6 +94,61 @@ def has_protected_folder_name(path: str) -> bool:
         for part in parts
     )
 
+
+class _SevenZipMemoryWriter(py7zr.Py7zIO):
+    def __init__(self, factory):
+        self.factory = factory
+        self.buffer = io.BytesIO()
+
+    def write(self, s):
+        if self.factory.is_cancelled is not None and self.factory.is_cancelled():
+            raise InterruptedError("7z scan was cancelled.")
+        if time.monotonic() >= self.factory.deadline:
+            raise TimeoutError("7z scan timed out.")
+        position = self.buffer.tell()
+        current_size = self.buffer.getbuffer().nbytes
+        new_size = max(current_size, position + len(s))
+        if new_size > self.factory.max_file_bytes:
+            raise ValueError("A 7z entry exceeds the configured per-file scan limit.")
+        with self.factory.lock:
+            added_size = new_size - current_size
+            if self.factory.total_bytes + added_size > self.factory.max_total_bytes:
+                raise ValueError("7z archive exceeds the bounded in-memory scan limit.")
+            self.factory.total_bytes += added_size
+        return self.buffer.write(s)
+
+    def read(self, size=None):
+        return self.buffer.read(size)
+
+    def seek(self, offset, whence=0):
+        return self.buffer.seek(offset, whence)
+
+    def flush(self):
+        self.buffer.flush()
+
+    def size(self):
+        return self.buffer.getbuffer().nbytes
+
+    def close(self):
+        pass
+
+
+class _SevenZipMemoryWriterFactory(py7zr.WriterFactory):
+    def __init__(self, max_file_bytes, max_total_bytes, deadline, is_cancelled):
+        self.max_file_bytes = max_file_bytes
+        self.max_total_bytes = max_total_bytes
+        self.deadline = deadline
+        self.is_cancelled = is_cancelled
+        self.total_bytes = 0
+        self.lock = threading.Lock()
+        self.products = []
+
+    def create(self, filename):
+        writer = _SevenZipMemoryWriter(self)
+        self.products.append((filename, writer))
+        return writer
+
+
 class StaticScanner:
     def __init__(self):
         try:
@@ -145,6 +213,214 @@ class StaticScanner:
                 timeout_seconds=timeout_seconds,
                 is_cancelled=is_cancelled,
             )
+
+    def scan_zip(
+        self,
+        path: Path,
+        password: str,
+        *,
+        max_archive_bytes: int = DEFAULT_MAX_FILE_BYTES,
+        max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
+        max_total_bytes: int = DEFAULT_MAX_FOLDER_BYTES,
+        max_files: int = MAX_FOLDER_SCAN_FILES,
+        timeout_seconds: float = 180.0,
+        is_cancelled=None,
+    ) -> dict:
+        target = Path(path).expanduser()
+        try:
+            resolved = target.resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise FileNotFoundError(f"Could not resolve the selected ZIP archive: {exc}") from exc
+        if is_protected_system_path(resolved):
+            raise ProtectedSystemPathError(
+                "Windows system and protected application files are excluded from file scans."
+            )
+        if not resolved.is_file():
+            raise ValueError("ZIP scanning requires a single existing file.")
+        if resolved.suffix.casefold() != ".zip":
+            raise ValueError("Only ZIP archives are supported by this scan operation.")
+        if resolved.stat().st_size > max_archive_bytes:
+            raise ValueError(f"ZIP archive exceeds the configured {max_archive_bytes}-byte limit.")
+
+        password_bytes = password.encode("utf-8") if password else None
+        started_at = time.monotonic()
+        try:
+            with pyzipper.AESZipFile(str(resolved)) as archive:
+                files = [info for info in archive.infolist() if not info.is_dir()]
+                if len(files) > max_files:
+                    raise ValueError(f"ZIP archive exceeds the configured {max_files}-file limit.")
+                encrypted_files = sum(bool(info.flag_bits & 0x1) for info in files)
+                if encrypted_files and password_bytes is None:
+                    raise ValueError("Enter the archive password to scan its encrypted entries.")
+
+                results = []
+                total_uncompressed_bytes = 0
+                for info in files:
+                    if info.file_size > max_file_bytes:
+                        raise ValueError(
+                            f"ZIP entry {info.filename!r} exceeds the configured "
+                            f"{max_file_bytes}-byte file limit."
+                        )
+                    remaining_total = max_total_bytes - total_uncompressed_bytes
+                    if info.file_size > remaining_total:
+                        raise ValueError(
+                            f"ZIP archive exceeds the configured {max_total_bytes}-byte "
+                            "total uncompressed limit."
+                        )
+                    remaining_timeout = timeout_seconds - (time.monotonic() - started_at)
+                    if remaining_timeout <= 0:
+                        raise TimeoutError("ZIP scan timed out.")
+                    if is_cancelled is not None and is_cancelled():
+                        raise InterruptedError("ZIP scan was cancelled.")
+
+                    member_password = password_bytes if info.flag_bits & 0x1 else None
+                    with archive.open(info, pwd=member_password) as stream:
+                        result = self.scan_stream(
+                            stream,
+                            f"{resolved.name}!/{info.filename}",
+                            suffix=Path(info.filename).suffix.lower(),
+                            max_bytes=min(max_file_bytes, remaining_total),
+                            timeout_seconds=remaining_timeout,
+                            is_cancelled=is_cancelled,
+                        )
+                    total_uncompressed_bytes += result["size"]
+                    results.append(result)
+        except NotImplementedError as exc:
+            raise ValueError(
+                "This ZIP encryption or compression method is not supported."
+            ) from exc
+        except RuntimeError as exc:
+            if any(
+                marker in str(exc).casefold()
+                for marker in ("bad password", "bad hmac")
+            ):
+                raise ValueError("The supplied password could not decrypt the ZIP entries.") from exc
+            raise
+        except pyzipper.BadZipFile as exc:
+            raise ValueError("The ZIP archive is invalid, corrupt, or could not be decrypted.") from exc
+
+        return {
+            "path": str(resolved),
+            "entries_scanned": len(results),
+            "encrypted_entries": encrypted_files,
+            "results": results,
+            "message": (
+                "ZIP entries were scanned locally as streams; decrypted files were not saved or executed. "
+                "These heuristic results are not a malware verdict."
+            ),
+        }
+
+    def scan_7z(
+        self,
+        path: Path,
+        password: str,
+        *,
+        max_archive_bytes: int = DEFAULT_MAX_FILE_BYTES,
+        max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
+        max_total_bytes: int = DEFAULT_MAX_FOLDER_BYTES,
+        max_files: int = MAX_FOLDER_SCAN_FILES,
+        timeout_seconds: float = 180.0,
+        is_cancelled=None,
+    ) -> dict:
+        target = Path(path).expanduser()
+        try:
+            resolved = target.resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise FileNotFoundError(f"Could not resolve the selected 7z archive: {exc}") from exc
+        if is_protected_system_path(resolved):
+            raise ProtectedSystemPathError(
+                "Windows system and protected application files are excluded from file scans."
+            )
+        if not resolved.is_file():
+            raise ValueError("7z scanning requires a single existing file.")
+        if resolved.suffix.casefold() != ".7z":
+            raise ValueError("Only 7z archives are supported by this scan operation.")
+        if resolved.stat().st_size > max_archive_bytes:
+            raise ValueError(f"7z archive exceeds the configured {max_archive_bytes}-byte limit.")
+
+        started_at = time.monotonic()
+        memory_limit = min(max_total_bytes, DEFAULT_MAX_FILE_BYTES)
+        try:
+            with resolved.open("rb") as archive_stream:
+                with py7zr.SevenZipFile(
+                    archive_stream,
+                    mode="r",
+                    password=password or None,
+                    max_extract_size=memory_limit,
+                ) as archive:
+                    files = [info for info in archive.list() if not info.is_directory]
+                    if len(files) > max_files:
+                        raise ValueError(f"7z archive exceeds the configured {max_files}-file limit.")
+                    encrypted_files = len(files) if archive.needs_password() else 0
+                    if encrypted_files and not password:
+                        raise ValueError("Enter the archive password to scan its encrypted entries.")
+                    total_declared_bytes = 0
+                    for info in files:
+                        if info.uncompressed > max_file_bytes:
+                            raise ValueError(
+                                f"7z entry {info.filename!r} exceeds the configured "
+                                f"{max_file_bytes}-byte file limit."
+                            )
+                        total_declared_bytes += info.uncompressed
+                        if total_declared_bytes > memory_limit:
+                            raise ValueError("7z archive exceeds the bounded in-memory scan limit.")
+
+                    factory = _SevenZipMemoryWriterFactory(
+                        max_file_bytes,
+                        memory_limit,
+                        started_at + timeout_seconds,
+                        is_cancelled,
+                    )
+                    archive.extractall(factory=factory)
+                    if len(factory.products) != len(files):
+                        raise ValueError("7z extraction did not produce a complete member list.")
+
+                    results = []
+                    total_uncompressed_bytes = 0
+                    for (name, writer), info in zip(factory.products, files):
+                        remaining_total = memory_limit - total_uncompressed_bytes
+                        remaining_timeout = timeout_seconds - (time.monotonic() - started_at)
+                        if remaining_timeout <= 0:
+                            raise TimeoutError("7z scan timed out.")
+                        if is_cancelled is not None and is_cancelled():
+                            raise InterruptedError("7z scan was cancelled.")
+                        writer.seek(0)
+                        result = self.scan_stream(
+                            writer,
+                            f"{resolved.name}!/{name}",
+                            suffix=Path(name).suffix.lower(),
+                            max_bytes=min(max_file_bytes, remaining_total),
+                            timeout_seconds=remaining_timeout,
+                            is_cancelled=is_cancelled,
+                        )
+                        if result["size"] != info.uncompressed:
+                            raise ValueError(f"7z entry {name!r} was not completely decrypted.")
+                        total_uncompressed_bytes += result["size"]
+                        results.append(result)
+        except PasswordRequired as exc:
+            raise ValueError("Enter the archive password to scan its encrypted entries.") from exc
+        except (lzma.LZMAError, CrcError, DecompressionError) as exc:
+            raise ValueError(
+                "The 7z password is incorrect, or the archive is corrupt."
+            ) from exc
+        except Bad7zFile as exc:
+            raise ValueError("The 7z archive is invalid, corrupt, or could not be decrypted.") from exc
+        except DecompressionBombError as exc:
+            raise ValueError("7z archive exceeds the bounded in-memory scan limit.") from exc
+        except UnsupportedCompressionMethodError as exc:
+            raise ValueError("This 7z compression method is not supported.") from exc
+
+        return {
+            "path": str(resolved),
+            "entries_scanned": len(results),
+            "encrypted_entries": encrypted_files,
+            "results": results,
+            "message": (
+                "7z entries were decrypted into bounded local memory for scanning; "
+                "plaintext files were not written to disk or executed. "
+                "These heuristic results are not a malware verdict."
+            ),
+        }
 
     def scan_stream(
         self,
