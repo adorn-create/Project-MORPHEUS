@@ -263,7 +263,12 @@
     <section class="section panel scan-panel" aria-labelledby="scanTitle">
       <div class="scan-copy">
         <h2 id="scanTitle">Check running apps</h2>
-        <p>Checks apps running right now for a few unusual signs. It does not scan your files. A clean result does not prove your computer is virus-free. Some alerts may be for legitimate apps.</p>
+        <p>Checks apps running right now using hand-authored heuristics, not a trained AI model. It does not scan your files. A clean result does not prove your computer is virus-free. Some alerts may be for legitimate apps.</p>
+        <div class="setting-toggle">
+          <input id="automaticHighConfidence" type="checkbox" {% if config.get('automatic_high_confidence', false) %}checked{% endif %}>
+          <label for="automaticHighConfidence">At the high-confidence threshold, quarantine the executable and block its observed public network destinations</label>
+        </div>
+        <p class="password-state">Off by default. Heuristic false positives can quarantine legitimate apps or interrupt network access. Requires Windows Firewall; changes need passkey approval.</p>
         <div class="scan-status" id="scanStatus" role="status" aria-live="polite">Ready to scan this device.</div>
       </div>
       <button class="primary" id="scanPanelButton" type="button">Check running apps</button>
@@ -1097,6 +1102,7 @@ async function refreshDashboard(includeFirewall = false) {
   downloadDirectoryPath.value = status.monitoring.download_directory || '';
   document.getElementById('quarantineState').textContent = status.config.automatic_quarantine ? 'On' : 'Off';
   document.getElementById('automaticQuarantine').checked = Boolean(status.config.automatic_quarantine);
+  document.getElementById('automaticHighConfidence').checked = Boolean(status.config.automatic_high_confidence);
   downloadMonitoring.checked = Boolean(status.config.download_monitoring);
   quarantineDownloads.checked = Boolean(status.config.automatic_quarantine_downloads);
   dnsEntropyMonitoring.checked = Boolean(status.config.dns_entropy_monitoring);
@@ -1490,6 +1496,7 @@ async function updateConfigFromToggle(toggle, change, errorLabel) {
       body: JSON.stringify(change(toggle.checked)),
     });
     document.getElementById('quarantineState').textContent = config.automatic_quarantine ? 'On' : 'Off';
+    document.getElementById('automaticHighConfidence').checked = Boolean(config.automatic_high_confidence);
     downloadMonitoring.checked = Boolean(config.download_monitoring);
     quarantineDownloads.checked = Boolean(config.automatic_quarantine_downloads);
     document.getElementById('downloadMonitorState').textContent = config.download_monitoring ? 'Folder file checks: ON' : 'Folder file checks: OFF';
@@ -1942,6 +1949,19 @@ async function startFirewallService() {
 
 document.getElementById('automaticQuarantine').addEventListener('change', event => {
   return updateConfigFromToggle(event.target, enabled => ({ automatic_quarantine: enabled }), 'Could not update process quarantine setting');
+});
+document.getElementById('automaticHighConfidence').addEventListener('change', event => {
+  if (event.target.checked && !window.confirm(
+    'Morpheus will quarantine an executable and add outbound firewall blocks for its observed public network destinations when its heuristic score reaches the high-confidence threshold. False positives can disrupt apps and network access. Continue?'
+  )) {
+    event.target.checked = false;
+    return;
+  }
+  return updateConfigFromToggle(
+    event.target,
+    enabled => ({ automatic_high_confidence: enabled }),
+    'Could not update high-confidence protection',
+  );
 });
 downloadMonitoring.addEventListener('change', event => {
   if (event.target.checked && !window.confirm('Morpheus will periodically check new or changed supported files in the selected folder and its subfolders. Existing files are used as a baseline. Files stay on this device; this is not full antivirus protection. Continue?')) {

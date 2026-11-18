@@ -31,11 +31,20 @@ def entropy(path: Path) -> float:
     except (OSError, MemoryError):
         return 0.0
 
-def executable_signals(proc, remote_connections=None, temp_exes=None):
+
+def normalized_executable_path(value) -> str:
+    return os.path.normcase(os.path.abspath(os.path.expandvars(os.fspath(value))))
+
+
+def executable_signals(proc, remote_connections=None, new_executables=None):
     try:
         exe = Path(proc.exe())
         name = exe.name.lower()
-        executable_path = os.path.normcase(os.path.abspath(str(exe)))
+        executable_path = normalized_executable_path(exe)
+        new_executable_paths = {
+            normalized_executable_path(path)
+            for path in (new_executables or set())
+        }
         temporary_roots = (
             os.environ.get("TEMP"),
             os.environ.get("TMP"),
@@ -57,7 +66,7 @@ def executable_signals(proc, remote_connections=None, temp_exes=None):
             "temporary_program_location": temp and exe.suffix.lower() in (".exe", ".dll", ".scr", ".com"),
             "many_remote_connections": len(connections) >= 8,
             "high_cpu": cpu >= 70,
-            "new_executable": str(exe) in (temp_exes or set()),
+            "new_executable": executable_path in new_executable_paths,
             "unexpected_sensitive_connection": len(connections) >= 2 and name in {"powershell.exe", "cmd.exe", "wscript.exe", "cscript.exe", "mshta.exe"},
         }, exe
     except (OSError, psutil.NoSuchProcess, psutil.AccessDenied):

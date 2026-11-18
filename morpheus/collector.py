@@ -29,7 +29,7 @@ def snapshot_processes(excluded=None):
     for item in connections:
         if item["pid"]:
             connections_by_pid.setdefault(item["pid"], []).append(item)
-    for proc in psutil.process_iter(["pid", "ppid", "name", "exe", "username"]):
+    for proc in psutil.process_iter(["pid", "ppid", "name", "exe", "username", "create_time"]):
         try:
             info = proc.info
             if info["name"] in excluded:

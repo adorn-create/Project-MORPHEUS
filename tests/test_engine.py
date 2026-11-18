@@ -33,7 +33,7 @@ def test_automatic_quarantine_is_reversible_and_does_not_block_network(tmp_path,
     monkeypatch.setattr(
         engine_module,
         "executable_signals",
-        lambda proc, connections: (
+        lambda proc, connections, new_executables=None: (
             {
                 "temporary_program_location": True,
                 "many_remote_connections": True,
@@ -108,7 +108,7 @@ def test_known_tool_is_reported_once_while_running_without_auto_action(tmp_path,
     }]
     monkeypatch.setattr(engine_module.psutil, "Process", lambda pid: object())
     monkeypatch.setattr(engine_module, "snapshot_processes", lambda excluded: process_snapshot)
-    monkeypatch.setattr(engine_module, "executable_signals", lambda proc, connections: ({}, executable))
+    monkeypatch.setattr(engine_module, "executable_signals", lambda proc, connections, new_executables=None: ({}, executable))
     monkeypatch.setattr(engine.quarantine, "quarantine", lambda path: (_ for _ in ()).throw(
         AssertionError("a tool-name match must not trigger automatic quarantine")
     ))
@@ -160,6 +160,105 @@ def test_process_tree_review_is_recorded_once_without_automatic_action(tmp_path,
     assert first[0]["response"] == "review_required_manual_approval"
     assert second == []
     assert engine.db.count() == 1
+
+
+def test_new_executable_signal_uses_initial_process_baseline(tmp_path, monkeypatch):
+    temp_root = tmp_path / "Temp"
+    temp_root.mkdir()
+    monkeypatch.setenv("TEMP", str(temp_root))
+    monkeypatch.setenv("TMP", str(temp_root))
+
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({
+        "process_memory_inspection": False,
+        "process_tree_monitoring": False,
+        "high_confidence_threshold": 0.95,
+        "excluded_processes": [],
+    }), encoding="utf-8")
+    engine = DefenseEngine(tmp_path / "data", config_path)
+    process_snapshot = []
+    monkeypatch.setattr(engine_module, "snapshot_processes", lambda excluded: process_snapshot)
+    monkeypatch.setattr(engine_module, "identify_known_tool", lambda *args: None)
+
+    class Process:
+        def __init__(self, path):
+            self.path = path
+
+        def exe(self):
+            return str(self.path)
+
+        def cpu_percent(self, interval=None):
+            return 0
+
+    executable = temp_root / "new-app.exe"
+    monkeypatch.setattr(engine_module.psutil, "Process", lambda pid: Process(executable))
+
+    assert engine.evaluate_once() == []
+    process_snapshot.append({
+        "pid": 42,
+        "name": "new-app.exe",
+        "exe": str(executable),
+        "connections": [],
+        "remote_connections": 0,
+    })
+    detections = engine.evaluate_once()
+
+    assert len(detections) == 1
+    assert detections[0]["kind"] == "suspicious_process"
+    assert json.loads(detections[0]["evidence"]) == [
+        "temporary_program_location",
+        "new_executable",
+    ]
+
+
+def test_cpu_signal_uses_reused_process_sample(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({
+        "process_memory_inspection": False,
+        "process_tree_monitoring": False,
+        "excluded_processes": [],
+    }), encoding="utf-8")
+    engine = DefenseEngine(tmp_path / "data", config_path)
+    executable = tmp_path / "app.exe"
+    process_snapshot = [{
+        "pid": 42,
+        "name": "app.exe",
+        "exe": str(executable),
+        "create_time": 123.0,
+        "connections": [],
+        "remote_connections": 0,
+    }]
+    monkeypatch.setattr(engine_module, "snapshot_processes", lambda excluded: process_snapshot)
+    monkeypatch.setattr(engine_module, "identify_known_tool", lambda *args: None)
+    cpu_samples = iter((0.0, 80.0))
+
+    class Process:
+        def exe(self):
+            return str(executable)
+
+        def cpu_percent(self, interval=None):
+            return next(cpu_samples)
+
+    created_processes = []
+
+    def create_process(pid):
+        process = Process()
+        created_processes.append(process)
+        return process
+
+    monkeypatch.setattr(engine_module.psutil, "Process", create_process)
+    scored_signals = []
+    monkeypatch.setattr(
+        engine.model,
+        "score",
+        lambda signals: (scored_signals.append(signals) or 0.0, []),
+    )
+
+    engine.evaluate_once()
+    engine.evaluate_once()
+
+    assert len(created_processes) == 1
+    assert [signals["high_cpu"] for signals in scored_signals] == [False, True]
 
 
 def test_lolbin_command_pattern_is_review_only_and_does_not_store_arguments(tmp_path, monkeypatch):

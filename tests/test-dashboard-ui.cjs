@@ -67,7 +67,7 @@ const ids = [
   'connectionStatus', 'fileScanButton', 'browseFileButton', 'browseFolderButton',
   'reviewCodeButton', 'folderInput',
   'scanResult', 'folderResults', 'downloadMonitoring', 'quarantineDownloads',
-  'automaticQuarantine', 'eventsBody', 'timeline', 'sysmonStatus',
+  'automaticQuarantine', 'automaticHighConfidence', 'eventsBody', 'timeline', 'sysmonStatus',
   'automaticIsolation', 'isolationState', 'isolatedFolderStatus',
   'dnsEntropyMonitoring', 'powershellLogMonitoring', 'processTreeMonitoring',
   'canaryMonitoring', 'dnsMonitorStatus', 'powershellMonitorStatus',
@@ -111,6 +111,7 @@ let processTreeData = {
 };
 let config = {
   automatic_quarantine: false,
+  automatic_high_confidence: false,
   automatic_isolation: false,
   download_monitoring: false,
   automatic_quarantine_downloads: false,
@@ -541,6 +542,13 @@ async function main() {
       JSON.stringify(calls.slice(-12).map(call => [call.url, call.method]))
   );
 
+  elements.get('automaticHighConfidence').checked = true;
+  await elements.get('automaticHighConfidence').dispatch('change');
+  assert.ok(calls.some(call =>
+    call.url === '/api/config'
+    && JSON.parse(call.options.body).automatic_high_confidence === true
+  ));
+
   const downloads = elements.get('downloadMonitoring');
   downloads.checked = true;
   await downloads.dispatch('change');
@@ -557,7 +565,7 @@ async function main() {
   const quarantineDownloads = elements.get('quarantineDownloads');
   quarantineDownloads.checked = true;
   await quarantineDownloads.dispatch('change');
-  assert.equal(calls.filter(call => call.url === '/api/config' && call.method === 'POST').length, 4);
+  assert.equal(calls.filter(call => call.url === '/api/config' && call.method === 'POST').length, 5);
 
   elements.get('ownerPasswordInput').value = 'a-long-owner-password';
   elements.get('dnsEntropyMonitoring').checked = true;

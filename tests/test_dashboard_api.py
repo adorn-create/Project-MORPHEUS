@@ -47,6 +47,9 @@ def test_dashboard_renders_background_monitoring_and_folder_picker():
     assert 'id="startupReviewButton"' in response.text
     assert 'id="startupReviewResults"' in response.text
     assert 'id="riskLevel"' in response.text
+    assert "hand-authored heuristics, not a trained AI model" in response.text
+    assert 'id="automaticHighConfidence"' in response.text
+    assert "Heuristic false positives can quarantine legitimate apps" in response.text
     assert 'id="defenderHealthState"' in response.text
     assert 'id="clamavHealthState"' in response.text
     assert 'id="clamavScanButton"' in response.text
@@ -392,6 +395,28 @@ def test_automatic_quarantine_is_opt_in(monkeypatch, tmp_path):
     assert denied.status_code == 401
     assert response.status_code == 200
     assert response.json()["automatic_quarantine"] is True
+
+
+def test_automatic_high_confidence_actions_require_passkey(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text('{"automatic_high_confidence": false}', encoding="utf-8")
+    monkeypatch.setattr(main, "CONFIG_PATH", config_path)
+    headers = _passkey_authorization(monkeypatch, tmp_path)
+
+    with TestClient(main.app) as client:
+        denied = client.post(
+            "/api/config",
+            json={"automatic_high_confidence": True},
+        )
+        enabled = client.post(
+            "/api/config",
+            headers=headers,
+            json={"automatic_high_confidence": True},
+        )
+
+    assert denied.status_code == 401
+    assert enabled.status_code == 200
+    assert enabled.json()["automatic_high_confidence"] is True
 
 
 def test_automatic_inbound_scan_blocking_is_opt_in(monkeypatch, tmp_path):

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from .collector import inspect_lolbin_command_line, process_tree_snapshot, snapshot_processes, utcnow
 from .database import Database
-from .detector import OwnBehaviorModel, executable_signals
+from .detector import OwnBehaviorModel, executable_signals, normalized_executable_path
 from .quarantine import QuarantineManager
 from .firewall import FirewallController, FirewallWorkerError
 from .integrity import EvidenceJournal
@@ -26,6 +26,8 @@ class DefenseEngine:
         self._reported_tool_processes: set[tuple[int, str]] = set()
         self._reported_tree_edges: set[tuple[int, int]] = set()
         self._reported_lolbin_processes: set[tuple[int, str]] = set()
+        self._previous_executable_paths: set[str] | None = None
+        self._process_handles: dict[int, tuple[float | None, psutil.Process]] = {}
         self.latest_process_tree = {
             "nodes": [],
             "edges": [],
@@ -149,12 +151,47 @@ class DefenseEngine:
     def config(self):
         return json.loads(self.config_path.read_text(encoding="utf-8"))
 
+    def _new_executable_paths(self, processes: list[dict]) -> set[str]:
+        current_paths = {
+            normalized_executable_path(executable)
+            for item in processes
+            if (executable := item.get("exe"))
+        }
+        if self._previous_executable_paths is None:
+            self._previous_executable_paths = current_paths
+            return set()
+
+        new_paths = current_paths - self._previous_executable_paths
+        self._previous_executable_paths = current_paths
+        return new_paths
+
+    def _process_for_monitoring(self, item: dict) -> psutil.Process:
+        pid = item["pid"]
+        create_time = item.get("create_time")
+        previous = self._process_handles.get(pid)
+        if previous is not None and previous[0] == create_time:
+            return previous[1]
+
+        process = psutil.Process(pid)
+        self._process_handles[pid] = (create_time, process)
+        return process
+
     def evaluate_once(self):
         config = self.config()
         detected = []
         active_tool_processes = set()
         active_lolbin_processes = set()
         processes = snapshot_processes(config.get("excluded_processes", []))
+        active_pids = {
+            item["pid"] for item in processes
+            if isinstance(item.get("pid"), int)
+        }
+        self._process_handles = {
+            pid: process_data
+            for pid, process_data in self._process_handles.items()
+            if pid in active_pids
+        }
+        new_executable_paths = self._new_executable_paths(processes)
         if config.get("process_memory_inspection", True):
             for process in processes[:256]:
                 pid = process.get("pid")
@@ -283,8 +320,12 @@ class DefenseEngine:
                     detected.append(event)
                     self._reported_tool_processes.add(identity)
             try:
-                proc = psutil.Process(pid)
-                signals, exe = executable_signals(proc, item["connections"])
+                proc = self._process_for_monitoring(item)
+                signals, exe = executable_signals(
+                    proc,
+                    item["connections"],
+                    new_executable_paths,
+                )
                 signals["suspicious_process_lineage"] = pid in lineage_processes
                 confidence, reasons = self.model.score(signals)
                 if confidence < 0.40:
