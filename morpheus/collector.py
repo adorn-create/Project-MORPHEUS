@@ -93,6 +93,13 @@ _SCRIPT_LAUNCH_PARENTS = {
 }
 
 
+def is_suspicious_process_tree_edge(parent_name, child_name):
+    return (
+        (parent_name or "").casefold() in _SCRIPT_LAUNCH_PARENTS
+        and (child_name or "").casefold() in _SUSPICIOUS_CHILDREN
+    )
+
+
 def process_tree_snapshot(processes):
     included = processes
     by_pid = {item["pid"]: item for item in included if item.get("pid") is not None}
@@ -108,12 +115,7 @@ def process_tree_snapshot(processes):
         if parent is None:
             continue
         parent_name = parent.get("name") or "unknown"
-        child_name = name.casefold()
-        parent_name_folded = parent_name.casefold()
-        suspicious = (
-            parent_name_folded in _SCRIPT_LAUNCH_PARENTS
-            and child_name in _SUSPICIOUS_CHILDREN
-        )
+        suspicious = is_suspicious_process_tree_edge(parent_name, name)
         edge = {
             "parent_pid": parent_pid,
             "parent_name": parent_name,
